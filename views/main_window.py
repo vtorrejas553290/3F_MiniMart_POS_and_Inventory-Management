@@ -1,8 +1,10 @@
 # ─────────────────────────────────────────────
-# MAIN WINDOW (softened 3F MiniMart branding + dashboard)
+# MAIN WINDOW (softened 3F MiniMart branding + dashboard + users)
 # ─────────────────────────────────────────────
 
 import customtkinter as ctk
+from tkinter import messagebox
+
 from config import (
     APP_NAME, font, font_bold,
     BRAND_GREEN, BRAND_YELLOW,
@@ -19,6 +21,7 @@ from views.supplier_view import SupplierView
 from views.purchase_view import PurchaseView
 from views.reports_view import ReportsView
 from views.activity_log_view import ActivityLogView
+from views.user_management_view import UserManagementView
 
 
 class MainWindow(ctk.CTk):
@@ -99,6 +102,7 @@ class MainWindow(ctk.CTk):
         self._nav_button(sidebar, "reports",   "📊   Reports",           self._show_reports)
 
         if AuthController.is_admin():
+            self._nav_button(sidebar, "users", "👤   User Management",  self._show_users)
             self._nav_button(sidebar, "logs",  "📝   Activity Logs",     self._show_logs)
 
         # ---- Logout ----
@@ -173,6 +177,7 @@ class MainWindow(ctk.CTk):
             "suppliers": self._show_suppliers,
             "purchases": self._show_purchases,
             "reports":   self._show_reports,
+            "users":     self._show_users,
             "logs":      self._show_logs,
         }
         if key in mapping:
@@ -216,6 +221,12 @@ class MainWindow(ctk.CTk):
         self._clear_content()
         ReportsView(self.content, self.user).pack(fill="both", expand=True)
 
+    def _show_users(self):
+        self._clear_content()
+        UserManagementView(self.content, self.user).pack(
+            fill="both", expand=True
+        )
+
     def _show_logs(self):
         self._clear_content()
         ActivityLogView(self.content, self.user).pack(fill="both", expand=True)
@@ -225,7 +236,18 @@ class MainWindow(ctk.CTk):
     # ─────────────────────────────────────────────
 
     def _logout(self):
+        # ---- Ask for confirmation first ----
+        confirm = messagebox.askyesno(
+            "Confirm Logout",
+            "Are you sure you want to log out?",
+            icon="question",
+        )
+        if not confirm:
+            return
+
+        # ---- Proceed with logout ----
         AuthController.logout()
         self.destroy()
+
         from views.login_view import LoginView
         LoginView().mainloop()

@@ -492,6 +492,12 @@ class POSView(ctk.CTkFrame):
         self.controller.remove_from_cart(product_id)
         self._refresh_cart()
 
+    # ---- NEW: decrease quantity by 1 ----
+    def _decrease(self, product_id):
+        """Reduce the quantity of a cart item by 1 (removes it if it hits 0)."""
+        self.controller.decrease_quantity(product_id)
+        self._refresh_cart()
+
     def _clear(self):
         self.controller.clear_cart()
         self._refresh_cart()
@@ -514,25 +520,39 @@ class POSView(ctk.CTkFrame):
             row = ctk.CTkFrame(self.cart_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=2)
 
+            # ---- Item name ----
             ctk.CTkLabel(row, text=item['name'],
                          anchor="w",
                          font=font_bold(11),
                          text_color=FG_PRIMARY).pack(side="left", padx=(8, 4), pady=6)
 
+            # ---- Quantity ----
             ctk.CTkLabel(row, text=f"×{item['quantity']}",
-                         font=font(11),
+                         width=32,
+                         font=font_bold(11),
                          text_color=FG_SECONDARY).pack(side="left", padx=4)
 
+            # ---- Subtotal ----
             ctk.CTkLabel(row, text=f"₱{item['price'] * item['quantity']:.2f}",
                          font=font_bold(11),
                          text_color=ACCENT).pack(side="right", padx=(4, 8))
 
-            ctk.CTkButton(row, text="✕", width=26, height=26,
+            # ---- Remove (✕) button ----
+            ctk.CTkButton(row, text="✕", width=30, height=28,
                           corner_radius=6,
-                          font=font(11),
+                          font=font(12),
                           fg_color=DANGER, hover_color=DANGER_HOVER,
                           command=lambda pid=item["product_id"]: self._remove(pid)
-                          ).pack(side="right", padx=4, pady=4)
+                          ).pack(side="right", padx=3, pady=4)
+
+            # ---- Minus (-) button ----
+            ctk.CTkButton(row, text="-", width=30, height=28,
+                          corner_radius=6,
+                          font=font_bold(16),
+                          fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+                          text_color=NEUTRAL_TEXT,
+                          command=lambda pid=item["product_id"]: self._decrease(pid)
+                          ).pack(side="right", padx=3, pady=4)
 
         self.total_label.configure(text=f"₱{self.controller.get_total():.2f}")
 
