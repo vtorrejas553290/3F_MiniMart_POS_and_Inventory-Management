@@ -9,6 +9,7 @@
 #   users ──< activity_logs
 #   supplier_categories ──< suppliers ──< products
 #   categories          ──< products
+#   products            ──< inventory          ← NEW
 #
 # Root tables: users, categories, supplier_categories
 
@@ -70,7 +71,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 3. suppliers (child of supplier_categories) ----
+    # ---- 3. suppliers ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS suppliers (
             supplier_id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,7 +86,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 4. categories (product categories) ----
+    # ---- 4. categories ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS categories (
             category_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,14 +96,13 @@ def initialize_database():
         )
     """)
 
-    # ---- 5. products ----
+    # ---- 5. products (NO stock_qty — moved to inventory) ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS products (
             product_id      INTEGER PRIMARY KEY AUTOINCREMENT,
             product_code    TEXT UNIQUE NOT NULL,
             name            TEXT NOT NULL,
             price           REAL NOT NULL,
-            stock_qty       INTEGER DEFAULT 0,
             low_stock_level INTEGER DEFAULT 10,
             image_path      TEXT,
             is_archived     INTEGER DEFAULT 0,
@@ -114,7 +114,18 @@ def initialize_database():
         )
     """)
 
-    # ---- 6. transactions ----
+    # ---- 6. inventory (child of products, one-to-many) ----
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS inventory (
+            inventory_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id   INTEGER NOT NULL,
+            stock_qty    INTEGER NOT NULL DEFAULT 0,
+            updated_at   TEXT NOT NULL,
+            FOREIGN KEY (product_id) REFERENCES products(product_id)
+        )
+    """)
+
+    # ---- 7. transactions ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
             transaction_id  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,7 +139,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 7. transaction_items ----
+    # ---- 8. transaction_items ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS transaction_items (
             item_id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,7 +153,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 8. purchases ----
+    # ---- 9. purchases ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS purchases (
             purchase_id  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -159,7 +170,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 9. purchase_items ----
+    # ---- 10. purchase_items ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS purchase_items (
             pitem_id     INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,7 +183,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 10. activity_logs ----
+    # ---- 11. activity_logs ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS activity_logs (
             log_id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -230,6 +241,29 @@ def _run_migrations(cur, conn):
         except sqlite3.OperationalError:
             pass
 
+    # ═════════════════════════════════════════
+    # MIGRATE products.stock_qty → inventory
+    # ═════════════════════════════════════════
+    try:
+        cols = [r[1] for r in cur.execute("PRAGMA table_info(products)")]
+        if "stock_qty" in cols:
+            # ---- Copy each product's stock into a new inventory row ----
+            # Only insert if the product doesn't already have an inventory row.
+            cur.execute("""
+                INSERT INTO inventory (product_id, stock_qty, updated_at)
+                SELECT p.product_id,
+                       COALESCE(p.stock_qty, 0),
+                       ?
+                FROM products p
+                WHERE p.product_id NOT IN (
+                    SELECT product_id FROM inventory
+                )
+            """, (now_local(),))
+            conn.commit()
+            print("[DB] Migrated products.stock_qty → inventory table")
+    except Exception as e:
+        print(f"[DB] Migration note: {e}")
+
 
 # ─────────────────────────────────────────────
 # SEED DATA
@@ -247,7 +281,6 @@ def _seed_default_admin(cur, conn):
 
 
 def _seed_default_supplier_category(cur, conn):
-    """Ensure at least one supplier category exists so suppliers can be added."""
     cur.execute("SELECT COUNT(*) AS c FROM supplier_categories")
     if cur.fetchone()["c"] == 0:
         cur.execute("""

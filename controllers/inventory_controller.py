@@ -6,7 +6,7 @@ from models.product_model import (
     get_all_products, get_products_by_category,
     add_product, update_product, get_low_stock_products,
     restock_product, archive_product, unarchive_product,
-    get_products_by_supplier
+    get_products_by_supplier, set_stock,
 )
 from models.category_model import (
     get_all_categories, add_category, update_category
@@ -47,12 +47,20 @@ class InventoryController:
     @staticmethod
     def update(user, product_id, name, price, stock, low,
                supplier_id, category_id, image_path=None):
-        ok, msg = update_product(product_id, name, price, stock, low,
+        # ---- Update product info ----
+        ok, msg = update_product(product_id, name, price, low,
                                  supplier_id, category_id, image_path)
-        if ok:
-            log_action(user["user_id"], "UPDATE_PRODUCT",
-                       f"ID {product_id} - {name}")
-        return ok, msg
+        if not ok:
+            return ok, msg
+
+        # ---- Update inventory separately ----
+        ok2, msg2 = set_stock(product_id, stock)
+        if not ok2:
+            return False, msg2
+
+        log_action(user["user_id"], "UPDATE_PRODUCT",
+                   f"ID {product_id} - {name}")
+        return True, "Product updated."
 
     @staticmethod
     def restock(user, product_id, quantity):
