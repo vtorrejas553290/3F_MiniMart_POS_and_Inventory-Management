@@ -1,41 +1,24 @@
 # ─────────────────────────────────────────────
-# REPORTS VIEW (softened 3F MiniMart branding + summary)
+# REPORTS VIEW (summary + top selling products)
 # ─────────────────────────────────────────────
 
 import customtkinter as ctk
 from datetime import datetime, timedelta
 
 from controllers.report_controller import ReportController
-from utils import prepare_dialog_screen
 from config import (
     font, font_bold,
     BG_MAIN, BG_CARD, BG_INPUT, BG_ROW_ALT, BORDER,
     FG_PRIMARY, FG_SECONDARY, FG_MUTED,
-    BRAND_GREEN, BRAND_YELLOW,
-    ACCENT, ACCENT_HOVER, SUCCESS, DANGER, DANGER_HOVER,
+    ACCENT, ACCENT_HOVER, SUCCESS, DANGER,
     NEUTRAL, NEUTRAL_HOVER, NEUTRAL_TEXT,
 )
 
 
-# ─────────────────────────────────────────────
-# REPORTS VIEW
-# ─────────────────────────────────────────────
-
 class ReportsView(ctk.CTkFrame):
-
-    # ---- Pagination size ----
-    PAGE_SIZE = 10
-
-    # ─────────────────────────────────────────────
-    # BUTTON COLORS
-    # ─────────────────────────────────────────────
 
     ACTIVE_COLOR = ACCENT
     IDLE_COLOR   = NEUTRAL
-
-    # ─────────────────────────────────────────────
-    # SETUP
-    # ─────────────────────────────────────────────
 
     def __init__(self, parent, user):
         super().__init__(parent, fg_color=BG_MAIN)
@@ -44,19 +27,15 @@ class ReportsView(ctk.CTkFrame):
         # ---- Filter state ----
         self.date_from = ""
         self.date_to = ""
-        self.search_query = ""
+        self.search_query = ""          # ← FIX #1: initialize it
         self.payment_filter = "All"
 
         # ---- Active quick-range button ----
         self.active_range_button = None
         self._programmatic_set = False
 
-        # ---- Pagination state ----
-        self.current_page = 1
-        self.total_pages = 1
-
         self._build()
-        self._refresh_transactions()
+        self._refresh()
 
     # ─────────────────────────────────────────────
     # BUILD
@@ -78,13 +57,13 @@ class ReportsView(ctk.CTkFrame):
                      text_color=FG_PRIMARY,
                      anchor="w").pack(fill="x")
         ctk.CTkLabel(title_box,
-                     text="View individual sales transactions",
+                     text="Summary and top selling products",
                      font=font(11),
                      text_color=FG_SECONDARY,
                      anchor="w").pack(fill="x", pady=(2, 0))
 
         # ═════════════════════════════════════════
-        # SUMMARY CARD (fixed 110px height)
+        # SUMMARY CARD
         # ═════════════════════════════════════════
 
         summary_card = ctk.CTkFrame(self, fg_color=BG_CARD,
@@ -166,7 +145,7 @@ class ReportsView(ctk.CTkFrame):
                                               text_color=ACCENT)
         self.gcash_total_label.pack(side="right")
 
-        # ---- Date range label ----
+        # ---- Date range label (placed at bottom of the card, not overlapping) ----
         self.range_label = ctk.CTkLabel(summary_card, text="",
                                         font=font(10),
                                         text_color=FG_MUTED)
@@ -195,7 +174,7 @@ class ReportsView(ctk.CTkFrame):
 
         self.search_e = ctk.CTkEntry(
             row1,
-            placeholder_text="Search by txn #, cashier, payment, product name...",
+            placeholder_text="Search by product name...",
             textvariable=self.search_var,
             width=340, height=36,
             corner_radius=8,
@@ -238,7 +217,7 @@ class ReportsView(ctk.CTkFrame):
                       corner_radius=8,
                       font=font_bold(12),
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
-                      command=self._refresh_transactions).pack(side="right")
+                      command=self._refresh).pack(side="right")
 
         # ---- Row 2: date range ----
         row2 = ctk.CTkFrame(filter_card, fg_color="transparent")
@@ -330,94 +309,36 @@ class ReportsView(ctk.CTkFrame):
         self.count_label.pack(side="right", padx=(0, 4))
 
         # ═════════════════════════════════════════
-        # LIST CARD
+        # TOP SELLING PRODUCTS CARD
         # ═════════════════════════════════════════
 
-        list_card = ctk.CTkFrame(self, fg_color=BG_CARD,
-                                 corner_radius=12,
-                                 border_width=1,
-                                 border_color=BORDER)
-        list_card.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        top_card = ctk.CTkFrame(self, fg_color=BG_CARD,
+                                corner_radius=12,
+                                border_width=1,
+                                border_color=BORDER)
+        top_card.pack(fill="both", expand=True, padx=20, pady=(0, 20))
 
-        self.list_frame = ctk.CTkScrollableFrame(list_card, fg_color="transparent")
+        # ---- Header ----
+        top_header = ctk.CTkFrame(top_card, fg_color="transparent")
+        top_header.pack(fill="x", padx=16, pady=(14, 8))
+
+        ctk.CTkLabel(top_header, text="TOP SELLING PRODUCTS",
+                     font=font_bold(13),
+                     text_color=FG_PRIMARY,
+                     anchor="w").pack(side="left")
+
+        ctk.CTkLabel(top_header, text="Top 5",
+                     font=font_bold(11),
+                     text_color=FG_MUTED,
+                     anchor="e").pack(side="right")
+
+        # ---- Divider ----
+        ctk.CTkFrame(top_card, height=1, fg_color=BORDER).pack(
+            fill="x", padx=16)
+
+        # ---- Scrollable list ----
+        self.list_frame = ctk.CTkScrollableFrame(top_card, fg_color="transparent")
         self.list_frame.pack(fill="both", expand=True, padx=8, pady=8)
-
-        # ═════════════════════════════════════════
-        # PAGINATION CONTROLS
-        # ═════════════════════════════════════════
-
-        pager = ctk.CTkFrame(list_card, fg_color="transparent")
-        pager.pack(fill="x", padx=12, pady=(0, 12))
-
-        self.prev_btn = ctk.CTkButton(
-            pager, text="‹ Prev",
-            width=90, height=32,
-            corner_radius=8,
-            font=font_bold(11),
-            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
-            text_color=NEUTRAL_TEXT,
-            command=lambda: self._change_page(-1),
-        )
-        self.prev_btn.pack(side="left")
-
-        self.page_label = ctk.CTkLabel(
-            pager, text="Page 1 of 1",
-            font=font_bold(11),
-            text_color=FG_SECONDARY,
-        )
-        self.page_label.pack(side="left", fill="x", expand=True)
-
-        self.next_btn = ctk.CTkButton(
-            pager, text="Next ›",
-            width=90, height=32,
-            corner_radius=8,
-            font=font_bold(11),
-            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
-            text_color=NEUTRAL_TEXT,
-            command=lambda: self._change_page(+1),
-        )
-        self.next_btn.pack(side="right")
-
-    # ─────────────────────────────────────────────
-    # PAGINATION
-    # ─────────────────────────────────────────────
-
-    def _change_page(self, delta):
-        new_page = self.current_page + delta
-        if 1 <= new_page <= self.total_pages:
-            self.current_page = new_page
-            self._refresh_transactions()
-
-    def _update_pager(self):
-        self.page_label.configure(
-            text=f"Page {self.current_page} of {self.total_pages}"
-        )
-
-        if self.current_page <= 1:
-            self.prev_btn.configure(
-                state="disabled",
-                fg_color=BG_INPUT,
-                text_color=FG_MUTED,
-            )
-        else:
-            self.prev_btn.configure(
-                state="normal",
-                fg_color=NEUTRAL,
-                text_color=NEUTRAL_TEXT,
-            )
-
-        if self.current_page >= self.total_pages:
-            self.next_btn.configure(
-                state="disabled",
-                fg_color=BG_INPUT,
-                text_color=FG_MUTED,
-            )
-        else:
-            self.next_btn.configure(
-                state="normal",
-                fg_color=NEUTRAL,
-                text_color=NEUTRAL_TEXT,
-            )
 
     # ─────────────────────────────────────────────
     # FILTERS — SEARCH
@@ -425,8 +346,7 @@ class ReportsView(ctk.CTkFrame):
 
     def _on_search_change(self, *args):
         self.search_query = self.search_var.get().strip().lower()
-        self.current_page = 1
-        self._refresh_transactions()
+        self._refresh()
 
     def _clear_search(self):
         self.search_var.set("")
@@ -437,8 +357,7 @@ class ReportsView(ctk.CTkFrame):
 
     def _on_payment_change(self, choice):
         self.payment_filter = choice
-        self.current_page = 1
-        self._refresh_transactions()
+        self._refresh()
 
     # ─────────────────────────────────────────────
     # QUICK-RANGE BUTTON HIGHLIGHT
@@ -485,8 +404,7 @@ class ReportsView(ctk.CTkFrame):
         self._clear_button_highlight()
         self.date_from = d_from
         self.date_to = d_to
-        self.current_page = 1
-        self._refresh_transactions()
+        self._refresh()
 
     def _is_valid_date(self, text):
         try:
@@ -530,33 +448,56 @@ class ReportsView(ctk.CTkFrame):
 
         self.date_from = d_from
         self.date_to = d_to
-        self.current_page = 1
         self._highlight_button(button)
-        self._refresh_transactions()
+        self._refresh()
 
     # ─────────────────────────────────────────────
-    # REFRESH
+    # REFRESH (with visible error handling)
     # ─────────────────────────────────────────────
 
-    def _refresh_transactions(self):
-        rows = ReportController.list_transactions(
-            date_from=self.date_from or None,
-            date_to=self.date_to or None,
-            search=self.search_query or None,
-            payment_method=self.payment_filter,
-        )
+    def _refresh(self):
+        try:
+            # ---- Summary ----
+            summary = ReportController.summary(
+                date_from=self.date_from or None,
+                date_to=self.date_to or None,
+            )
+            self._update_summary(summary)
 
-        self._update_summary(rows)
-        self._render(rows)
+            # ---- Top selling products ----
+            top_products = ReportController.top_selling_products(
+                date_from=self.date_from or None,
+                date_to=self.date_to or None,
+                search=self.search_query or None,
+                payment_method=self.payment_filter,
+                limit=5,
+            )
+            self._render_top_products(top_products)
 
-    def _update_summary(self, transactions):
-        total_sales = sum(t["total"] for t in transactions)
-        count = len(transactions)
+        except Exception as e:
+            # ---- Visible error so we don't get a silent blank screen ----
+            import traceback
+            traceback.print_exc()
 
-        cash_total = sum(t["total"] for t in transactions
-                         if t["payment_method"] == "Cash")
-        gcash_total = sum(t["total"] for t in transactions
-                          if t["payment_method"] == "GCash")
+            for w in self.list_frame.winfo_children():
+                w.destroy()
+            ctk.CTkLabel(self.list_frame,
+                         text=f"Error loading reports:\n{e}",
+                         font=font(11),
+                         text_color=DANGER,
+                         justify="left").pack(pady=20)
+
+            # ---- Reset summary fields so it doesn't look frozen ----
+            self.total_sales_label.configure(text="—")
+            self.txn_count_label.configure(text="—")
+            self.cash_total_label.configure(text="—")
+            self.gcash_total_label.configure(text="—")
+
+    def _update_summary(self, summary):
+        total_sales = summary["total_sales"] if summary else 0
+        count = summary["count"] if summary else 0
+        cash_total = summary["cash_total"] if summary else 0
+        gcash_total = summary["gcash_total"] if summary else 0
 
         self.total_sales_label.configure(text=f"₱{total_sales:,.2f}")
         self.txn_count_label.configure(text=f"{count:,}")
@@ -571,38 +512,34 @@ class ReportsView(ctk.CTkFrame):
             self.range_label.configure(text="All time")
 
     # ─────────────────────────────────────────────
-    # RENDER
+    # RENDER TOP PRODUCTS
     # ─────────────────────────────────────────────
 
-    def _render(self, transactions):
+    def _render_top_products(self, products):
         for w in self.list_frame.winfo_children():
             w.destroy()
 
-        # ---- Total count ----
-        total = len(transactions)
-        self.count_label.configure(text=f"{total} transaction(s)")
+        if not products:
+            ctk.CTkLabel(self.list_frame,
+                         text="No sales data available for the selected period.",
+                         font=font(12),
+                         text_color=FG_MUTED).pack(pady=30)
+            self.count_label.configure(text="")
+            return
 
-        # ---- Pagination math ----
-        self.total_pages = max(1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
-        if self.current_page > self.total_pages:
-            self.current_page = self.total_pages
+        self.count_label.configure(text=f"{len(products)} product(s)")
 
-        start = (self.current_page - 1) * self.PAGE_SIZE
-        end = start + self.PAGE_SIZE
-        page_rows = transactions[start:end]
-
+        # ---- Header row ----
         header = ctk.CTkFrame(self.list_frame, fg_color="transparent")
         header.pack(fill="x", pady=(4, 8))
+
         cols = [
-            ("Txn #",       70),
-            ("Date & Time", 140),
-            ("Cashier",     110),
-            ("Payment",     80),
-            ("Item",        220),
-            ("Qty",         50),
-            ("Unit Price",  90),
-            ("Subtotal",    90),
-            ("Total",       90),
+            ("#",              40),
+            ("Product",        220),
+            ("Code",           100),
+            ("Units Sold",     90),
+            ("Transactions",   100),
+            ("Revenue",        100),
         ]
         for text, width in cols:
             ctk.CTkLabel(header, text=text, width=width,
@@ -610,257 +547,33 @@ class ReportsView(ctk.CTkFrame):
                          font=font_bold(11),
                          text_color=FG_SECONDARY).pack(side="left", padx=3)
 
-        if not page_rows:
-            ctk.CTkLabel(self.list_frame,
-                         text="No transactions match your filters.",
-                         font=font(12),
-                         text_color=FG_MUTED).pack(pady=30)
-            self._update_pager()
-            return
-
-        for i, t in enumerate(page_rows):
-            self._render_row(t, i)
-
-        # ---- Update pager ----
-        self._update_pager()
-
-    def _render_row(self, t, txn_index=0):
-        items = ReportController.transaction_items(t["transaction_id"])
-        base_bg = BG_ROW_ALT if txn_index % 2 else BG_CARD
-
-        if not items:
-            row = ctk.CTkFrame(self.list_frame, fg_color=base_bg, corner_radius=6)
-            row.pack(fill="x", pady=2)
-
-            ctk.CTkLabel(row, text=f"#{t['transaction_id']}",
-                         width=70, anchor="w",
-                         font=font_bold(11),
-                         text_color=ACCENT).pack(side="left", padx=3, pady=6)
-            ctk.CTkLabel(row, text=t["created_at"] or "-",
-                         width=140, anchor="w",
-                         font=font(11),
-                         text_color=FG_SECONDARY).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text=t["full_name"] or t["username"] or "-",
-                         width=110, anchor="w",
-                         font=font(11),
-                         text_color=FG_PRIMARY).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text=t["payment_method"],
-                         width=80, anchor="w",
-                         font=font_bold(11),
-                         text_color=self._payment_color(t["payment_method"])
-                         ).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text="—", width=220, anchor="w",
-                         font=font(11),
-                         text_color=FG_MUTED).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text="—", width=50,
-                         text_color=FG_MUTED).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text="—", width=90,
-                         text_color=FG_MUTED).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text="—", width=90,
-                         text_color=FG_MUTED).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text=f"₱{t['total']:.2f}",
-                         width=90, anchor="w",
-                         font=font_bold(12),
-                         text_color=ACCENT).pack(side="left", padx=3)
-            ctk.CTkButton(row, text="View", width=60, height=28,
-                          corner_radius=6,
-                          font=font_bold(11),
-                          fg_color=ACCENT, hover_color=ACCENT_HOVER,
-                          command=lambda txn=t: self._view_transaction(txn)
-                          ).pack(side="right", padx=4)
-            return
-
-        for index, it in enumerate(items):
-            row = ctk.CTkFrame(self.list_frame, fg_color=base_bg, corner_radius=6)
+        # ---- Data rows ----
+        for i, p in enumerate(products):
+            bg = BG_ROW_ALT if i % 2 else BG_CARD
+            row = ctk.CTkFrame(self.list_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=1)
 
-            if index == 0:
-                ctk.CTkLabel(row, text=f"#{t['transaction_id']}",
-                             width=70, anchor="w",
-                             font=font_bold(11),
-                             text_color=ACCENT).pack(side="left", padx=3, pady=6)
-                ctk.CTkLabel(row, text=t["created_at"] or "-",
-                             width=140, anchor="w",
-                             font=font(11),
-                             text_color=FG_SECONDARY).pack(side="left", padx=3)
-                ctk.CTkLabel(row,
-                             text=t["full_name"] or t["username"] or "-",
-                             width=110, anchor="w",
-                             font=font(11),
-                             text_color=FG_PRIMARY).pack(side="left", padx=3)
-                ctk.CTkLabel(row, text=t["payment_method"],
-                             width=80, anchor="w",
-                             font=font_bold(11),
-                             text_color=self._payment_color(t["payment_method"])
-                             ).pack(side="left", padx=3)
-            else:
-                ctk.CTkLabel(row, text="", width=70).pack(side="left", padx=3, pady=6)
-                ctk.CTkLabel(row, text="", width=140).pack(side="left", padx=3)
-                ctk.CTkLabel(row, text="", width=110).pack(side="left", padx=3)
-                ctk.CTkLabel(row, text="", width=80).pack(side="left", padx=3)
-
-            ctk.CTkLabel(row, text=it["product_name"],
+            ctk.CTkLabel(row, text=str(i + 1),
+                         width=40, anchor="w",
+                         font=font_bold(11),
+                         text_color=FG_MUTED).pack(side="left", padx=3, pady=6)
+            ctk.CTkLabel(row, text=p["product_name"],
                          width=220, anchor="w",
-                         font=font(11),
-                         text_color=FG_PRIMARY).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text=f"×{it['quantity']}",
-                         width=50, anchor="w",
-                         font=font(11),
-                         text_color=FG_SECONDARY).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text=f"₱{it['price']:.2f}",
-                         width=90, anchor="w",
-                         font=font(11),
-                         text_color=FG_PRIMARY).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text=f"₱{it['subtotal']:.2f}",
-                         width=90, anchor="w",
                          font=font_bold(11),
                          text_color=FG_PRIMARY).pack(side="left", padx=3)
-
-            if index == 0:
-                ctk.CTkLabel(row, text=f"₱{t['total']:.2f}",
-                             width=90, anchor="w",
-                             font=font_bold(12),
-                             text_color=ACCENT).pack(side="left", padx=3)
-                ctk.CTkButton(row, text="View", width=60, height=28,
-                              corner_radius=6,
-                              font=font_bold(11),
-                              fg_color=ACCENT, hover_color=ACCENT_HOVER,
-                              command=lambda txn=t: self._view_transaction(txn)
-                              ).pack(side="right", padx=4)
-            else:
-                ctk.CTkLabel(row, text="", width=90).pack(side="left", padx=3)
-                ctk.CTkLabel(row, text="", width=64).pack(side="right", padx=4)
-
-    # ─────────────────────────────────────────────
-    # HELPERS
-    # ─────────────────────────────────────────────
-
-    @staticmethod
-    def _payment_color(method):
-        if method == "Cash":
-            return SUCCESS
-        if method == "GCash":
-            return ACCENT
-        return FG_SECONDARY
-
-    # ─────────────────────────────────────────────
-    # TRANSACTION DETAIL
-    # ─────────────────────────────────────────────
-
-    def _view_transaction(self, txn):
-        TransactionDetailDialog(self.winfo_toplevel(), txn)
-
-
-# ─────────────────────────────────────────────
-# TRANSACTION DETAIL DIALOG (styled)
-# ─────────────────────────────────────────────
-
-class TransactionDetailDialog(ctk.CTkToplevel):
-
-    def __init__(self, parent, txn):
-        super().__init__(parent)
-        self.parent = parent
-        self.txn = txn
-        self.title(f"Transaction #{txn['transaction_id']}")
-        self.geometry("580x500")
-        self.resizable(False, False)
-        self.configure(fg_color=BG_MAIN)
-        self._build()
-        prepare_dialog_screen(self, self.parent)
-
-    def _build(self):
-        t = self.txn
-
-        ctk.CTkLabel(self, text=f"Transaction #{t['transaction_id']}",
-                     font=font_bold(18),
-                     text_color=FG_PRIMARY).pack(pady=(18, 4))
-
-        ctk.CTkLabel(self, text=t["created_at"],
-                     font=font(11),
-                     text_color=FG_SECONDARY).pack(pady=(0, 14))
-
-        info = ctk.CTkFrame(self, fg_color=BG_CARD,
-                            corner_radius=12,
-                            border_width=1,
-                            border_color=BORDER)
-        info.pack(fill="x", padx=20, pady=(0, 10))
-
-        rows = [
-            ("Cashier",       t["full_name"] or t["username"]),
-            ("Payment",       t["payment_method"]),
-        ]
-        if t["payment_method"] == "GCash":
-            ref = t["gcash_reference"]
-            if ref:
-                rows.append(("GCash Reference", ref))
-        rows += [
-            ("Amount Paid",   f"₱{t['amount_paid']:.2f}"),
-            ("Change",        f"₱{t['change_due']:.2f}"),
-            ("Total",         f"₱{t['total']:.2f}"),
-        ]
-        for i, (label, value) in enumerate(rows):
-            if i > 0:
-                ctk.CTkFrame(info, height=1, fg_color=BORDER).pack(fill="x", padx=14)
-
-            row = ctk.CTkFrame(info, fg_color="transparent")
-            row.pack(fill="x", padx=14, pady=8)
-
-            ctk.CTkLabel(row, text=label,
-                         font=font_bold(11),
-                         text_color=FG_SECONDARY,
-                         anchor="w").pack(side="left")
-            ctk.CTkLabel(row, text=str(value), anchor="e",
-                         font=font_bold(12),
-                         text_color=FG_PRIMARY).pack(side="right")
-
-        ctk.CTkLabel(self, text="Items Purchased",
-                     font=font_bold(13),
-                     text_color=FG_PRIMARY).pack(pady=(10, 4))
-
-        items_card = ctk.CTkFrame(self, fg_color=BG_CARD,
-                                  corner_radius=12,
-                                  border_width=1,
-                                  border_color=BORDER)
-        items_card.pack(fill="both", expand=True, padx=20, pady=(0, 10))
-
-        lines = ctk.CTkScrollableFrame(items_card, fg_color="transparent")
-        lines.pack(fill="both", expand=True, padx=8, pady=8)
-
-        header = ctk.CTkFrame(lines, fg_color="transparent")
-        header.pack(fill="x", pady=(2, 6))
-        for text, width in [("Item", 220), ("Qty", 60),
-                            ("Price", 100), ("Subtotal", 110)]:
-            ctk.CTkLabel(header, text=text, width=width,
-                         anchor="w",
-                         font=font_bold(11),
-                         text_color=FG_SECONDARY).pack(side="left", padx=3)
-
-        items = ReportController.transaction_items(t["transaction_id"])
-        for i, it in enumerate(items):
-            bg = BG_ROW_ALT if i % 2 else "transparent"
-            row = ctk.CTkFrame(lines, fg_color=bg, corner_radius=6)
-            row.pack(fill="x", pady=1)
-
-            ctk.CTkLabel(row, text=it["product_name"],
-                         width=220, anchor="w",
-                         font=font(11),
-                         text_color=FG_PRIMARY).pack(side="left", padx=3, pady=6)
-            ctk.CTkLabel(row, text=f"×{it['quantity']}",
-                         width=60, anchor="w",
-                         font=font(11),
-                         text_color=FG_SECONDARY).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text=f"₱{it['price']:.2f}",
+            ctk.CTkLabel(row, text=p["product_code"],
                          width=100, anchor="w",
                          font=font(11),
-                         text_color=FG_PRIMARY).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text=f"₱{it['subtotal']:.2f}",
-                         width=110, anchor="w",
+                         text_color=FG_SECONDARY).pack(side="left", padx=3)
+            ctk.CTkLabel(row, text=f"{p['units_sold']:,}",
+                         width=90, anchor="w",
                          font=font_bold(11),
                          text_color=FG_PRIMARY).pack(side="left", padx=3)
-
-        ctk.CTkButton(self, text="Close", width=140, height=38,
-                      corner_radius=8,
-                      font=font_bold(12),
-                      fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
-                      text_color=NEUTRAL_TEXT,
-                      command=self.destroy).pack(pady=(6, 16))
+            ctk.CTkLabel(row, text=f"{p['transaction_count']:,}",
+                         width=100, anchor="w",
+                         font=font(11),
+                         text_color=FG_SECONDARY).pack(side="left", padx=3)
+            ctk.CTkLabel(row, text=f"₱{p['revenue']:,.2f}",
+                         width=100, anchor="w",
+                         font=font_bold(12),
+                         text_color=ACCENT).pack(side="left", padx=3)

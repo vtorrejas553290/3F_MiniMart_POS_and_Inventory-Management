@@ -7,6 +7,7 @@ from PIL import Image
 import customtkinter as ctk
 from tkinter import messagebox
 
+from controllers.transaction_controller import TransactionController
 from controllers.pos_controller import POSController
 from controllers.inventory_controller import InventoryController
 from utils import prepare_dialog_screen
@@ -29,7 +30,7 @@ class POSView(ctk.CTkFrame):
     def __init__(self, parent, user):
         super().__init__(parent, fg_color=BG_MAIN)
         self.user = user
-        self.controller = POSController()
+        self.controller = POSController()          # cart-only helper
         self.categories = InventoryController.list_categories()
         self.selected_category_id = None
         self.search_query = ""
@@ -328,6 +329,17 @@ class POSView(ctk.CTkFrame):
         self._render_products()
 
     # ─────────────────────────────────────────────
+    # CART HELPERS
+    # ─────────────────────────────────────────────
+
+    def _get_cart_quantity(self, product_id):
+        """Return how many of this product are currently in the cart."""
+        for item in self.controller.cart:
+            if item["product_id"] == product_id:
+                return item["quantity"]
+        return 0
+
+    # ─────────────────────────────────────────────
     # PRODUCT RENDERING
     # ─────────────────────────────────────────────
 
@@ -367,9 +379,13 @@ class POSView(ctk.CTkFrame):
         if low_level is None:
             low_level = 10
 
+        # ---- How many are already in the cart? ----
+        in_cart = self._get_cart_quantity(product["product_id"])
+        at_max = (stock > 0 and in_cart >= stock)
+
         # ---- Card colors ----
-        card_fg = BG_INPUT if out_of_stock else BG_CARD
-        hover_fg = NEUTRAL if out_of_stock else "#EAF0FF"
+        card_fg = BG_INPUT if (out_of_stock or at_max) else BG_CARD
+        hover_fg = NEUTRAL if (out_of_stock or at_max) else "#EAF0FF"
 
         # ═════════════════════════════════════════
         # Card (plain frame, all children get bound)
@@ -393,7 +409,7 @@ class POSView(ctk.CTkFrame):
         thumb_box = ctk.CTkFrame(
             card,
             width=56, height=56,
-            fg_color=NEUTRAL if out_of_stock else "#F1F5F9",
+            fg_color=NEUTRAL if (out_of_stock or at_max) else "#F1F5F9",
             corner_radius=8,
         )
         thumb_box.place(x=10, rely=0.5, anchor="w")
@@ -407,7 +423,7 @@ class POSView(ctk.CTkFrame):
                 thumb_box,
                 text="📦",
                 font=font(22),
-                text_color=FG_MUTED if out_of_stock else FG_SECONDARY,
+                text_color=FG_MUTED if (out_of_stock or at_max) else FG_SECONDARY,
             )
             thumb_label.place(relx=0.5, rely=0.5, anchor="center")
 
@@ -421,7 +437,7 @@ class POSView(ctk.CTkFrame):
             info,
             text=product["name"],
             font=font_bold(13),
-            text_color=FG_MUTED if out_of_stock else FG_PRIMARY,
+            text_color=FG_MUTED if (out_of_stock or at_max) else FG_PRIMARY,
             anchor="w",
         )
         name_label.pack(anchor="w")
@@ -441,7 +457,7 @@ class POSView(ctk.CTkFrame):
             meta,
             text=f"₱{product['price']:.2f}",
             font=font_bold(12),
-            text_color=FG_MUTED if out_of_stock else ACCENT,
+            text_color=FG_MUTED if (out_of_stock or at_max) else ACCENT,
         )
         price_label.pack(side="left")
 
@@ -453,9 +469,12 @@ class POSView(ctk.CTkFrame):
         if out_of_stock:
             stock_text = "Out of Stock"
             stock_color = DANGER
+        elif at_max:
+            stock_text = f"Max in cart ({in_cart}/{stock})"
+            stock_color = "#D97706"     # amber
         elif stock <= low_level:
             stock_text = f"Low: {stock}"
-            stock_color = "#D97706"     # amber
+            stock_color = "#D97706"
         else:
             stock_text = f"Stock: {stock}"
             stock_color = SUCCESS
@@ -468,13 +487,21 @@ class POSView(ctk.CTkFrame):
         # ═════════════════════════════════════════
         # Bind click + hover to EVERY child of the card
         # ═════════════════════════════════════════
-        click_action = (
-            (lambda: messagebox.showwarning(
-                "Out of Stock", f"{product['name']} is out of stock."
-             ))
-            if out_of_stock
-            else (lambda prod=product: self._add_to_cart(prod))
-        )
+        if out_of_stock:
+            click_action = lambda: messagebox.showwarning(
+                "Out of Stock",
+                f"{product['name']} is out of stock."
+            )
+        elif at_max:
+            click_action = lambda: messagebox.showwarning(
+                "Insufficient Stock",
+                f"Cannot add more of {product['name']}.\n\n"
+                f"Stock available: {stock}\n"
+                f"Already in cart: {in_cart}\n\n"
+                f"You've reached the maximum available quantity."
+            )
+        else:
+            click_action = lambda prod=product: self._add_to_cart(prod)
 
         widgets = [
             card,
@@ -520,10 +547,31 @@ class POSView(ctk.CTkFrame):
     # ─────────────────────────────────────────────
 
     def _add_to_cart(self, product):
-        if product["stock_qty"] <= 0:
-            messagebox.showwarning("Out of Stock",
-                                   f"{product['name']} is out of stock.")
+        stock = product["stock_qty"]
+
+        # ---- Already out of stock (safety net) ----
+        if stock <= 0:
+            messagebox.showwarning(
+                "Out of Stock",
+                f"{product['name']} is out of stock."
+            )
             return
+
+        # ---- How many are already in the cart? ----
+        existing = self._get_cart_quantity(product["product_id"])
+
+        # ---- Would adding one more exceed the stock? ----
+        if existing + 1 > stock:
+            messagebox.showwarning(
+                "Insufficient Stock",
+                f"Cannot add more of {product['name']}.\n\n"
+                f"Stock available: {stock}\n"
+                f"Already in cart: {existing}\n\n"
+                f"You've reached the maximum available quantity."
+            )
+            return
+
+        # ---- Safe to add ----
         self.controller.add_to_cart(product)
         self._refresh_cart()
 
@@ -550,6 +598,8 @@ class POSView(ctk.CTkFrame):
                          font=font(11),
                          text_color=FG_MUTED).pack(pady=30)
             self.total_label.configure(text="₱0.00")
+            # ---- Keep product cards in sync ----
+            self._render_products()
             return
 
         for i, item in enumerate(self.controller.cart):
@@ -594,6 +644,9 @@ class POSView(ctk.CTkFrame):
 
         self.total_label.configure(text=f"₱{self.controller.get_total():.2f}")
 
+        # ---- Keep product cards in sync with cart state ----
+        self._render_products()
+
     # ─────────────────────────────────────────────
     # CHECKOUT (with confirmation dialog)
     # ─────────────────────────────────────────────
@@ -603,6 +656,40 @@ class POSView(ctk.CTkFrame):
             messagebox.showwarning("Empty Cart", "Add products before checking out.")
             return
 
+        # ═════════════════════════════════════════
+        # Re-validate stock for every cart item
+        # (guards against stock changing mid-sale)
+        # ═════════════════════════════════════════
+        fresh_products = {
+            p["product_id"]: p for p in InventoryController.list_products()
+        }
+        problems = []
+        for item in self.controller.cart:
+            fresh = fresh_products.get(item["product_id"])
+            if fresh is None:
+                problems.append(f"• {item['name']}: product not found.")
+            elif item["quantity"] > fresh["stock_qty"]:
+                problems.append(
+                    f"• {item['name']}: you have {item['quantity']} in cart "
+                    f"but only {fresh['stock_qty']} in stock."
+                )
+
+        if problems:
+            messagebox.showerror(
+                "Stock Changed",
+                "Some items in your cart exceed available stock:\n\n" +
+                "\n".join(problems) +
+                "\n\nPlease adjust the cart before checking out."
+            )
+            self.products = InventoryController.list_by_category(
+                self.selected_category_id
+            )
+            self._render_products()
+            return
+
+        # ═════════════════════════════════════════
+        # Payment handling
+        # ═════════════════════════════════════════
         method = self.payment_var.get()
         gcash_reference = None
 
@@ -648,8 +735,15 @@ class POSView(ctk.CTkFrame):
         if not confirm.confirmed:
             return
 
-        ok, result, change = self.controller.checkout(
-            self.user, method, paid, gcash_reference
+        # ═════════════════════════════════════════
+        # Use TransactionController to persist
+        # ═════════════════════════════════════════
+        ok, result, change = TransactionController.create(
+            user_id=self.user["user_id"],
+            cart=self.controller.cart,
+            payment_method=method,
+            amount_paid=paid,
+            gcash_reference=gcash_reference,
         )
         if not ok:
             messagebox.showerror("Checkout Failed", str(result))
@@ -662,6 +756,9 @@ class POSView(ctk.CTkFrame):
             f"Paid: ₱{paid:.2f}\n"
             f"Change: ₱{change:.2f}"
         )
+
+        # ---- Clear the cart + reset UI ----
+        self.controller.clear_cart()
         self.amount_entry.delete(0, "end")
         self.ref_entry.delete(0, "end")
 

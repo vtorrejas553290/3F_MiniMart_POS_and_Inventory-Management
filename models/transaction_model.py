@@ -261,3 +261,56 @@ def get_dashboard_stats(date_str=None):
         "total_sales_alltime": alltime_row["sales"],
         "txn_count_alltime":   alltime_row["count"],
     }
+
+# ─────────────────────────────────────────────
+# READ — TOP SELLING PRODUCTS (for Reports)
+# ─────────────────────────────────────────────
+
+def get_top_selling_products(date_from=None, date_to=None,
+                             search=None, payment_method=None, limit=5):
+    """
+    Return top-selling products with aggregated stats:
+      - product_name, product_code
+      - units_sold (total quantity)
+      - transaction_count (distinct transactions)
+      - revenue (total subtotal)
+    """
+    conn = get_connection()
+    sql = """
+        SELECT
+            p.name  AS product_name,
+            p.product_code AS product_code,
+            COALESCE(SUM(ti.quantity), 0)      AS units_sold,
+            COUNT(DISTINCT ti.transaction_id)  AS transaction_count,
+            COALESCE(SUM(ti.subtotal), 0)      AS revenue
+        FROM transaction_items ti
+        JOIN products     p ON ti.product_id     = p.product_id
+        JOIN transactions t ON ti.transaction_id = t.transaction_id
+        WHERE 1=1
+    """
+    params = []
+
+    if date_from:
+        sql += " AND DATE(t.created_at) >= ?"
+        params.append(date_from)
+    if date_to:
+        sql += " AND DATE(t.created_at) <= ?"
+        params.append(date_to)
+    if payment_method and payment_method != "All":
+        sql += " AND t.payment_method = ?"
+        params.append(payment_method)
+    if search:
+        q = f"%{search.lower()}%"
+        sql += " AND LOWER(p.name) LIKE ?"
+        params.append(q)
+
+    sql += """
+        GROUP BY p.product_id, p.name, p.product_code
+        ORDER BY units_sold DESC
+        LIMIT ?
+    """
+    params.append(limit)
+
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return rows

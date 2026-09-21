@@ -6,6 +6,7 @@
 import customtkinter as ctk
 
 from controllers.dashboard_controller import DashboardController
+from controllers.auth_controller import AuthController       # NEW
 from config import (
     font, font_bold,
     BG_MAIN, BG_CARD, BG_INPUT, BG_ROW_ALT, BORDER,
@@ -104,14 +105,18 @@ class DashboardView(ctk.CTkFrame):
                      text_color=FG_PRIMARY,
                      anchor="w").pack(side="left")
 
-        ctk.CTkButton(left_header, text="View All",
-                      width=90, height=30,
-                      corner_radius=8,
-                      font=font_bold(11),
-                      fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
-                      text_color=NEUTRAL_TEXT,
-                      command=lambda: self._go_to("reports")
-                      ).pack(side="right")
+        # ═════════════════════════════════════════
+        # "View All" → only for admins (Reports is admin-only)
+        # ═════════════════════════════════════════
+        if AuthController.is_admin():
+            ctk.CTkButton(left_header, text="View All",
+                          width=90, height=30,
+                          corner_radius=8,
+                          font=font_bold(11),
+                          fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+                          text_color=NEUTRAL_TEXT,
+                          command=lambda: self._go_to("reports")
+                          ).pack(side="right")
 
         # ---- Recent list ----
         self.recent_frame = ctk.CTkScrollableFrame(left, fg_color="transparent")
@@ -135,6 +140,7 @@ class DashboardView(ctk.CTkFrame):
                      text_color=FG_PRIMARY,
                      anchor="w").pack(side="left")
 
+        # ---- Low Stock "View All" is safe for everyone (goes to Inventory) ----
         ctk.CTkButton(right_header, text="View All",
                       width=90, height=30,
                       corner_radius=8,
@@ -248,6 +254,11 @@ class DashboardView(ctk.CTkFrame):
     # ─────────────────────────────────────────────
 
     def _go_to(self, key):
+        # ---- Admin-only keys (extra safety) ----
+        ADMIN_ONLY = {"reports", "suppliers", "purchases", "users", "logs"}
+        if key in ADMIN_ONLY and not AuthController.is_admin():
+            return
+
         if callable(self.on_navigate):
             self.on_navigate(key)
 

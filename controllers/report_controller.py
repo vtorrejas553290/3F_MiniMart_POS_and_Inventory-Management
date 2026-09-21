@@ -1,14 +1,12 @@
 # ─────────────────────────────────────────────
-# REPORT CONTROLLER
+# REPORT CONTROLLER (aggregated analytics only)
 # ─────────────────────────────────────────────
 
 from models.transaction_model import (
     get_sales_today,
     get_sales_between,
-    get_transactions_filtered,
     get_sales_summary,
-    get_transaction_items,
-    get_items_summary_for_transaction,
+    get_top_selling_products,
 )
 from models.activity_log_model import log_action
 
@@ -28,26 +26,37 @@ class ReportController:
         return get_sales_summary(date_from, date_to)
 
     # ─────────────────────────────────────────────
-    # INDIVIDUAL TRANSACTIONS
+    # RANGE QUERIES
     # ─────────────────────────────────────────────
-
-    @staticmethod
-    def list_transactions(date_from=None, date_to=None,
-                          search=None, payment_method=None):
-        return get_transactions_filtered(date_from, date_to,
-                                         search, payment_method)
 
     @staticmethod
     def list_by_range(start, end):
         return get_sales_between(start, end)
 
-    @staticmethod
-    def transaction_items(transaction_id):
-        return get_transaction_items(transaction_id)
+    # ─────────────────────────────────────────────
+    # TOP SELLING PRODUCTS
+    # ─────────────────────────────────────────────
 
     @staticmethod
-    def items_summary(transaction_id):
-        return get_items_summary_for_transaction(transaction_id)
+    def top_selling_products(date_from=None, date_to=None,
+                             search=None, payment_method=None, limit=5):
+        """
+        Return the top-selling products within the given filters.
+
+        Each row includes:
+          - product_name
+          - product_code
+          - units_sold
+          - transaction_count
+          - revenue
+        """
+        return get_top_selling_products(
+            date_from=date_from,
+            date_to=date_to,
+            search=search,
+            payment_method=payment_method,
+            limit=limit,
+        )
 
     # ─────────────────────────────────────────────
     # ACCESS LOG
