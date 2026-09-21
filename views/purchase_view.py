@@ -26,12 +26,15 @@ from config import (
 
 class PurchaseView(ctk.CTkFrame):
 
+    # ---- Pagination size ----
+    PAGE_SIZE = 10
+
     # ─────────────────────────────────────────────
     # BUTTON COLORS
     # ─────────────────────────────────────────────
 
-    ACTIVE_COLOR = ACCENT          # ---- soft blue when active ----
-    IDLE_COLOR   = NEUTRAL         # ---- gray when idle ----
+    ACTIVE_COLOR = ACCENT
+    IDLE_COLOR   = NEUTRAL
 
     # ─────────────────────────────────────────────
     # SETUP
@@ -48,6 +51,10 @@ class PurchaseView(ctk.CTkFrame):
         # ---- Active quick-range button ----
         self.active_range_button = None
         self._programmatic_set = False
+
+        # ---- Pagination state ----
+        self.current_page = 1
+        self.total_pages = 1
 
         self._build()
         self._load()
@@ -77,7 +84,6 @@ class PurchaseView(ctk.CTkFrame):
                      text_color=FG_SECONDARY,
                      anchor="w").pack(fill="x", pady=(2, 0))
 
-        # ---- Primary action ----
         ctk.CTkButton(header_frame, text="+ New Purchase Order",
                       height=38, corner_radius=8,
                       font=font_bold(12),
@@ -125,7 +131,6 @@ class PurchaseView(ctk.CTkFrame):
                       text_color=NEUTRAL_TEXT,
                       command=self._clear_search).pack(side="left", padx=(0, 20))
 
-        # ---- Status filter ----
         ctk.CTkLabel(row1, text="Status",
                      font=font_bold(11),
                      text_color=FG_SECONDARY).pack(side="left", padx=(0, 8))
@@ -145,7 +150,6 @@ class PurchaseView(ctk.CTkFrame):
             command=self._on_status_change,
         ).pack(side="left", padx=(0, 20))
 
-        # ---- Refresh button ----
         ctk.CTkButton(row1, text="Refresh", width=100, height=36,
                       corner_radius=8,
                       font=font_bold(12),
@@ -194,7 +198,6 @@ class PurchaseView(ctk.CTkFrame):
         )
         self.date_to_e.pack(side="left", padx=(0, 16))
 
-        # ---- Quick range buttons ----
         self.btn_today = ctk.CTkButton(
             row2, text="Today", width=80, height=36,
             corner_radius=8,
@@ -235,7 +238,6 @@ class PurchaseView(ctk.CTkFrame):
         )
         self.btn_clear.pack(side="left", padx=2)
 
-        # ---- Results count ----
         self.count_label = ctk.CTkLabel(row2, text="",
                                         font=font_bold(11),
                                         text_color=FG_SECONDARY)
@@ -254,12 +256,90 @@ class PurchaseView(ctk.CTkFrame):
         self.list_frame = ctk.CTkScrollableFrame(list_card, fg_color="transparent")
         self.list_frame.pack(fill="both", expand=True, padx=8, pady=8)
 
+        # ═════════════════════════════════════════
+        # PAGINATION CONTROLS
+        # ═════════════════════════════════════════
+
+        pager = ctk.CTkFrame(list_card, fg_color="transparent")
+        pager.pack(fill="x", padx=12, pady=(0, 12))
+
+        self.prev_btn = ctk.CTkButton(
+            pager, text="‹ Prev",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(-1),
+        )
+        self.prev_btn.pack(side="left")
+
+        self.page_label = ctk.CTkLabel(
+            pager, text="Page 1 of 1",
+            font=font_bold(11),
+            text_color=FG_SECONDARY,
+        )
+        self.page_label.pack(side="left", fill="x", expand=True)
+
+        self.next_btn = ctk.CTkButton(
+            pager, text="Next ›",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(+1),
+        )
+        self.next_btn.pack(side="right")
+
+    # ─────────────────────────────────────────────
+    # PAGINATION
+    # ─────────────────────────────────────────────
+
+    def _change_page(self, delta):
+        new_page = self.current_page + delta
+        if 1 <= new_page <= self.total_pages:
+            self.current_page = new_page
+            self._load()
+
+    def _update_pager(self):
+        self.page_label.configure(
+            text=f"Page {self.current_page} of {self.total_pages}"
+        )
+
+        if self.current_page <= 1:
+            self.prev_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.prev_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
+        if self.current_page >= self.total_pages:
+            self.next_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.next_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
     # ─────────────────────────────────────────────
     # FILTERS — SEARCH
     # ─────────────────────────────────────────────
 
     def _on_search_change(self, *args):
         self.search_query = self.search_var.get().strip().lower()
+        self.current_page = 1
         self._load()
 
     def _clear_search(self):
@@ -271,6 +351,7 @@ class PurchaseView(ctk.CTkFrame):
 
     def _on_status_change(self, choice):
         self.filter_status = choice
+        self.current_page = 1
         self._load()
 
     # ─────────────────────────────────────────────
@@ -278,12 +359,10 @@ class PurchaseView(ctk.CTkFrame):
     # ─────────────────────────────────────────────
 
     def _highlight_button(self, button):
-        # ---- Reset previous ----
         if self.active_range_button is not None:
             self.active_range_button.configure(
                 fg_color=NEUTRAL, text_color=NEUTRAL_TEXT,
             )
-        # ---- Highlight new ----
         if button is not None:
             button.configure(fg_color=ACCENT, text_color="#FFFFFF")
         self.active_range_button = button
@@ -320,6 +399,7 @@ class PurchaseView(ctk.CTkFrame):
         self._clear_button_highlight()
         self.date_from = d_from
         self.date_to = d_to
+        self.current_page = 1
         self._load()
 
     def _is_valid_date(self, text):
@@ -364,6 +444,7 @@ class PurchaseView(ctk.CTkFrame):
 
         self.date_from = d_from
         self.date_to = d_to
+        self.current_page = 1
         self._highlight_button(button)
         self._load()
 
@@ -419,7 +500,18 @@ class PurchaseView(ctk.CTkFrame):
         for w in self.list_frame.winfo_children():
             w.destroy()
 
-        self.count_label.configure(text=f"{len(purchases)} record(s)")
+        # ---- Total count ----
+        total = len(purchases)
+        self.count_label.configure(text=f"{total} record(s)")
+
+        # ---- Pagination math ----
+        self.total_pages = max(1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        if self.current_page > self.total_pages:
+            self.current_page = self.total_pages
+
+        start = (self.current_page - 1) * self.PAGE_SIZE
+        end = start + self.PAGE_SIZE
+        page_purchases = purchases[start:end]
 
         # ---- Header ----
         header = ctk.CTkFrame(self.list_frame, fg_color="transparent")
@@ -440,16 +532,20 @@ class PurchaseView(ctk.CTkFrame):
                          text_color=FG_SECONDARY).pack(side="left", padx=3)
 
         # ---- Empty state ----
-        if not purchases:
+        if not page_purchases:
             ctk.CTkLabel(self.list_frame,
                          text="No records match your filters.",
                          font=font(12),
                          text_color=FG_MUTED).pack(pady=30)
+            self._update_pager()
             return
 
         # ---- Rows ----
-        for i, p in enumerate(purchases):
+        for i, p in enumerate(page_purchases):
             self._render_row(p, i)
+
+        # ---- Update pager ----
+        self._update_pager()
 
     def _render_row(self, p, index=0):
         bg = BG_ROW_ALT if index % 2 else BG_CARD
@@ -472,7 +568,6 @@ class PurchaseView(ctk.CTkFrame):
                      font=font_bold(11),
                      text_color=FG_PRIMARY).pack(side="left", padx=3)
 
-        # ---- Status color-coded ----
         status = p["status"]
         colors = {
             "Ordered":   BRAND_YELLOW,
@@ -609,7 +704,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                      font=font(11),
                      text_color=FG_SECONDARY).pack(pady=(0, 12))
 
-        # ---- Supplier picker card ----
         sup_card = ctk.CTkFrame(self, fg_color=BG_CARD,
                                 corner_radius=10,
                                 border_width=1,
@@ -647,11 +741,9 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                       command=self._load_products_for_supplier
                       ).pack(side="left")
 
-        # ---- Two-column body ----
         body = ctk.CTkFrame(self, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=20, pady=(0, 8))
 
-        # ---- Left card: products ----
         left = ctk.CTkFrame(body, fg_color=BG_CARD,
                             corner_radius=10,
                             border_width=1,
@@ -665,7 +757,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         self.products_frame = ctk.CTkScrollableFrame(left, fg_color="transparent")
         self.products_frame.pack(fill="both", expand=True, padx=8, pady=(0, 10))
 
-        # ---- Right card: order lines ----
         right = ctk.CTkFrame(body, fg_color=BG_CARD,
                              corner_radius=10,
                              border_width=1,
@@ -679,7 +770,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         self.lines_frame = ctk.CTkScrollableFrame(right, fg_color="transparent")
         self.lines_frame.pack(fill="both", expand=True, padx=8, pady=(0, 10))
 
-        # ---- Total ----
         total_row = ctk.CTkFrame(self, fg_color="transparent")
         total_row.pack(fill="x", padx=20, pady=(0, 4))
 
@@ -692,7 +782,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                                         text_color=ACCENT)
         self.total_label.pack(side="right")
 
-        # ---- Notes ----
         notes_row = ctk.CTkFrame(self, fg_color="transparent")
         notes_row.pack(fill="x", padx=20, pady=(4, 8))
 
@@ -709,7 +798,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                                     placeholder_text="Optional notes for this order")
         self.notes_e.pack(fill="x")
 
-        # ---- Buttons ----
         btn_row = ctk.CTkFrame(self, fg_color="transparent")
         btn_row.pack(pady=(6, 18))
 
@@ -728,7 +816,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                       text_color=NEUTRAL_TEXT,
                       command=self._clear).pack(side="left", padx=6)
 
-        # ---- Auto-load ----
         self._load_products_for_supplier()
 
     # ─────────────────────────────────────────────
@@ -801,7 +888,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                                     f"{product['name']} is already in the order.")
                 return
 
-        # ---- Quantity / cost prompt ----
         prompt = ctk.CTkToplevel(self)
         prompt.title(f"Add {product['name']}")
         prompt.geometry("360x320")
@@ -1001,7 +1087,6 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
                      font=font(12),
                      text_color=FG_SECONDARY).pack(pady=(0, 14))
 
-        # ---- Info card ----
         info = ctk.CTkFrame(self, fg_color=BG_CARD,
                             corner_radius=12,
                             border_width=1,
@@ -1033,7 +1118,6 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
                          font=font(12),
                          text_color=FG_PRIMARY).pack(side="left")
 
-        # ---- Items card ----
         items_card = ctk.CTkFrame(self, fg_color=BG_CARD,
                                   corner_radius=12,
                                   border_width=1,
@@ -1047,7 +1131,6 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
         lines = ctk.CTkScrollableFrame(items_card, fg_color="transparent")
         lines.pack(fill="both", expand=True, padx=8, pady=(0, 10))
 
-        # ---- Header ----
         header = ctk.CTkFrame(lines, fg_color="transparent")
         header.pack(fill="x", pady=(4, 8))
         for text, width in [("Code", 90), ("Name", 200),
@@ -1057,7 +1140,6 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
                          font=font_bold(11),
                          text_color=FG_SECONDARY).pack(side="left", padx=3)
 
-        # ---- Items ----
         items = PurchaseController.get_items(p["purchase_id"])
         for i, it in enumerate(items):
             bg = BG_ROW_ALT if i % 2 else BG_CARD
@@ -1090,7 +1172,6 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
                          font=font_bold(11),
                          text_color=ACCENT).pack(side="left", padx=3)
 
-        # ---- Close ----
         ctk.CTkButton(self, text="Close",
                       width=120, height=38,
                       corner_radius=8,

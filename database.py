@@ -51,13 +51,15 @@ def initialize_database():
     # ---- 1. users ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            user_id     INTEGER PRIMARY KEY AUTOINCREMENT,
-            username    TEXT UNIQUE NOT NULL,
-            password    TEXT NOT NULL,
-            full_name   TEXT NOT NULL,
-            role        TEXT NOT NULL CHECK(role IN ('admin','staff')),
-            is_active   INTEGER DEFAULT 1,
-            created_at  TEXT NOT NULL
+            user_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            username     TEXT UNIQUE NOT NULL,
+            password     TEXT NOT NULL,
+            first_name   TEXT NOT NULL,
+            middle_name  TEXT,
+            last_name    TEXT NOT NULL,
+            role         TEXT NOT NULL CHECK(role IN ('admin','staff')),
+            is_active    INTEGER DEFAULT 1,
+            created_at   TEXT NOT NULL
         )
     """)
 
@@ -96,7 +98,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 5. products (NO stock_qty — moved to inventory) ----
+    # ---- 5. products ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS products (
             product_id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,7 +116,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 6. inventory (child of products, one-to-many) ----
+    # ---- 6. inventory ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS inventory (
             inventory_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,13 +130,14 @@ def initialize_database():
     # ---- 7. transactions ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
-            transaction_id  INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id         INTEGER NOT NULL,
-            total           REAL NOT NULL,
-            payment_method  TEXT NOT NULL CHECK(payment_method IN ('Cash','GCash')),
-            amount_paid     REAL NOT NULL,
-            change_due      REAL DEFAULT 0,
-            created_at      TEXT NOT NULL,
+            transaction_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id          INTEGER NOT NULL,
+            total            REAL NOT NULL,
+            payment_method   TEXT NOT NULL CHECK(payment_method IN ('Cash','GCash')),
+            amount_paid      REAL NOT NULL,
+            change_due       REAL DEFAULT 0,
+            gcash_reference  TEXT,
+            created_at       TEXT NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(user_id)
         )
     """)
@@ -232,6 +235,15 @@ def _run_migrations(cur, conn):
          "purchases.notes"),
         ("ALTER TABLE purchases ADD COLUMN received_at TEXT",
          "purchases.received_at"),
+
+        # ---- transactions ----
+        ("ALTER TABLE transactions ADD COLUMN gcash_reference TEXT",
+         "transactions.gcash_reference"),
+
+        # ---- users (split full_name → first / middle / last) ----
+        ("ALTER TABLE users ADD COLUMN first_name TEXT",  "users.first_name"),
+        ("ALTER TABLE users ADD COLUMN middle_name TEXT", "users.middle_name"),
+        ("ALTER TABLE users ADD COLUMN last_name TEXT",   "users.last_name"),
     ]
     for sql, name in migrations:
         try:
@@ -247,8 +259,6 @@ def _run_migrations(cur, conn):
     try:
         cols = [r[1] for r in cur.execute("PRAGMA table_info(products)")]
         if "stock_qty" in cols:
-            # ---- Copy each product's stock into a new inventory row ----
-            # Only insert if the product doesn't already have an inventory row.
             cur.execute("""
                 INSERT INTO inventory (product_id, stock_qty, updated_at)
                 SELECT p.product_id,
@@ -264,6 +274,43 @@ def _run_migrations(cur, conn):
     except Exception as e:
         print(f"[DB] Migration note: {e}")
 
+    # ═════════════════════════════════════════
+    # MIGRATE users.full_name → first/middle/last
+    # ═════════════════════════════════════════
+    try:
+        cols = [r[1] for r in cur.execute("PRAGMA table_info(users)")]
+        if "full_name" in cols:
+            cur.execute("""
+                SELECT user_id, full_name
+                FROM users
+                WHERE first_name IS NULL
+                   OR last_name IS NULL
+            """)
+            rows = cur.fetchall()
+
+            migrated = 0
+            for row in rows:
+                parts = (row["full_name"] or "").strip().split()
+                if not parts:
+                    continue
+
+                first = parts[0]
+                last = parts[-1] if len(parts) > 1 else parts[0]
+                middle = " ".join(parts[1:-1]) if len(parts) > 2 else None
+
+                cur.execute("""
+                    UPDATE users
+                    SET first_name = ?, middle_name = ?, last_name = ?
+                    WHERE user_id = ?
+                """, (first, middle, last, row["user_id"]))
+                migrated += 1
+
+            conn.commit()
+            if migrated:
+                print(f"[DB] Migrated {migrated} user(s) full_name → first/middle/last")
+    except Exception as e:
+        print(f"[DB] Migration note (users): {e}")
+
 
 # ─────────────────────────────────────────────
 # SEED DATA
@@ -273,9 +320,12 @@ def _seed_default_admin(cur, conn):
     cur.execute("SELECT COUNT(*) AS c FROM users")
     if cur.fetchone()["c"] == 0:
         cur.execute("""
-            INSERT INTO users (username, password, full_name, role, created_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, ("admin", "admin123", "Store Owner", ROLE_ADMIN, now_local()))
+            INSERT INTO users
+                (username, password, first_name, middle_name, last_name,
+                 role, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, ("admin", "admin123", "Store", None, "Owner",
+              ROLE_ADMIN, now_local()))
         conn.commit()
         print("[DB] Default admin created -> username: admin | password: admin123")
 

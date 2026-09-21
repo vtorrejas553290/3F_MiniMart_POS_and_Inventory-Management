@@ -1,5 +1,6 @@
 # ─────────────────────────────────────────────
-# DASHBOARD VIEW (quick overview for the owner)
+# DASHBOARD VIEW (quick overview for the owner,
+#                 with pagination for lists)
 # ─────────────────────────────────────────────
 
 import customtkinter as ctk
@@ -21,6 +22,9 @@ from config import (
 
 class DashboardView(ctk.CTkFrame):
 
+    # ---- Pagination size ----
+    PAGE_SIZE = 5
+
     # ─────────────────────────────────────────────
     # SETUP
     # ─────────────────────────────────────────────
@@ -28,7 +32,15 @@ class DashboardView(ctk.CTkFrame):
     def __init__(self, parent, user):
         super().__init__(parent, fg_color=BG_MAIN)
         self.user = user
-        self.on_navigate = None      # ---- set by main_window ----
+        self.on_navigate = None
+
+        # ---- Pagination state ----
+        self.recent_page = 1
+        self.recent_total_pages = 1
+
+        self.lowstock_page = 1
+        self.lowstock_total_pages = 1
+
         self._build()
         self._load()
 
@@ -65,14 +77,13 @@ class DashboardView(ctk.CTkFrame):
         stats_row = ctk.CTkFrame(self, fg_color="transparent")
         stats_row.pack(fill="x", padx=20, pady=(0, 10))
 
-        # ---- 4 stat cards ----
         self.sales_card    = self._make_stat_card(stats_row, "TODAY'S SALES",      "₱0.00", ACCENT)
         self.txn_card      = self._make_stat_card(stats_row, "TRANSACTIONS TODAY", "0",     FG_PRIMARY)
         self.products_card = self._make_stat_card(stats_row, "ACTIVE PRODUCTS",    "0",     BRAND_GREEN)
         self.lowstock_card = self._make_stat_card(stats_row, "LOW STOCK",          "0",     "#D97706")
 
         # ═════════════════════════════════════════
-        # TWO COLUMNS: Recent Transactions + Low Stock
+        # TWO COLUMNS
         # ═════════════════════════════════════════
 
         body = ctk.CTkFrame(self, fg_color="transparent")
@@ -104,7 +115,10 @@ class DashboardView(ctk.CTkFrame):
 
         # ---- Recent list ----
         self.recent_frame = ctk.CTkScrollableFrame(left, fg_color="transparent")
-        self.recent_frame.pack(fill="both", expand=True, padx=8, pady=(0, 12))
+        self.recent_frame.pack(fill="both", expand=True, padx=8, pady=(0, 6))
+
+        # ---- Recent pagination controls ----
+        self.recent_pager = self._make_pager(left, "recent")
 
         # ---- RIGHT: Low Stock ----
         right = ctk.CTkFrame(body, fg_color=BG_CARD,
@@ -130,15 +144,18 @@ class DashboardView(ctk.CTkFrame):
                       command=lambda: self._go_to("inventory")
                       ).pack(side="right")
 
+        # ---- Low stock list ----
         self.lowstock_frame = ctk.CTkScrollableFrame(right, fg_color="transparent")
-        self.lowstock_frame.pack(fill="both", expand=True, padx=8, pady=(0, 12))
+        self.lowstock_frame.pack(fill="both", expand=True, padx=8, pady=(0, 6))
+
+        # ---- Low stock pagination controls ----
+        self.lowstock_pager = self._make_pager(right, "lowstock")
 
     # ─────────────────────────────────────────────
     # STAT CARD BUILDER
     # ─────────────────────────────────────────────
 
     def _make_stat_card(self, parent, label, value, value_color):
-        """Create a stat card and return the value label for later updates."""
         card = ctk.CTkFrame(parent, fg_color=BG_CARD,
                             corner_radius=12,
                             border_width=1,
@@ -164,11 +181,73 @@ class DashboardView(ctk.CTkFrame):
         return value_label
 
     # ─────────────────────────────────────────────
+    # PAGER BUILDER
+    # ─────────────────────────────────────────────
+
+    def _make_pager(self, parent, pager_key):
+        """
+        Build a Prev / Next / page-indicator row.
+        Returns a dict with the widgets so they can be updated later.
+        """
+        pager = ctk.CTkFrame(parent, fg_color="transparent")
+        pager.pack(fill="x", padx=12, pady=(0, 12))
+
+        prev_btn = ctk.CTkButton(
+            pager, text="‹ Prev",
+            width=80, height=30,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(pager_key, -1),
+        )
+        prev_btn.pack(side="left")
+
+        page_label = ctk.CTkLabel(
+            pager, text="Page 1 of 1",
+            font=font_bold(11),
+            text_color=FG_SECONDARY,
+        )
+        page_label.pack(side="left", fill="x", expand=True)
+
+        next_btn = ctk.CTkButton(
+            pager, text="Next ›",
+            width=80, height=30,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(pager_key, +1),
+        )
+        next_btn.pack(side="right")
+
+        return {
+            "prev":  prev_btn,
+            "next":  next_btn,
+            "label": page_label,
+        }
+
+    # ─────────────────────────────────────────────
+    # PAGE CHANGE
+    # ─────────────────────────────────────────────
+
+    def _change_page(self, pager_key, delta):
+        if pager_key == "recent":
+            new_page = self.recent_page + delta
+            if 1 <= new_page <= self.recent_total_pages:
+                self.recent_page = new_page
+                self._render_recent_transactions()
+        elif pager_key == "lowstock":
+            new_page = self.lowstock_page + delta
+            if 1 <= new_page <= self.lowstock_total_pages:
+                self.lowstock_page = new_page
+                self._render_low_stock()
+
+    # ─────────────────────────────────────────────
     # NAVIGATION HELPER
     # ─────────────────────────────────────────────
 
     def _go_to(self, key):
-        """Ask main_window to navigate to a different view."""
         if callable(self.on_navigate):
             self.on_navigate(key)
 
@@ -179,109 +258,131 @@ class DashboardView(ctk.CTkFrame):
     def _load(self):
         stats = DashboardController.get_stats()
 
-        # ---- Update stat cards ----
         self.sales_card.configure(text=f"₱{stats['total_sales_today']:,.2f}")
         self.txn_card.configure(text=f"{stats['txn_count_today']:,}")
         self.products_card.configure(text=f"{stats['total_products']:,}")
         self.lowstock_card.configure(text=f"{stats['low_stock_count']:,}")
 
-        # ---- Load recent transactions ----
         self._render_recent_transactions()
-
-        # ---- Load low stock ----
         self._render_low_stock()
 
     # ─────────────────────────────────────────────
-    # RECENT TRANSACTIONS
+    # RECENT TRANSACTIONS (paginated)
     # ─────────────────────────────────────────────
 
     def _render_recent_transactions(self):
         for w in self.recent_frame.winfo_children():
             w.destroy()
 
-        rows = DashboardController.recent_transactions(limit=5)
+        # ---- Fetch all, then slice ----
+        rows = DashboardController.recent_transactions(limit=500)
 
-        if not rows:
+        total = len(rows)
+        self.recent_total_pages = max(1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+
+        # ---- Clamp current page ----
+        if self.recent_page > self.recent_total_pages:
+            self.recent_page = self.recent_total_pages
+
+        start = (self.recent_page - 1) * self.PAGE_SIZE
+        end = start + self.PAGE_SIZE
+        page_rows = rows[start:end]
+
+        # ---- Empty state ----
+        if not page_rows:
             ctk.CTkLabel(self.recent_frame,
                          text="No transactions yet.",
                          font=font(11),
                          text_color=FG_MUTED).pack(pady=30)
+            self._update_pager(self.recent_pager, 1, 1)
             return
 
-        for i, t in enumerate(rows):
+        # ---- Render rows ----
+        for i, t in enumerate(page_rows):
             bg = BG_ROW_ALT if i % 2 else "transparent"
 
             row = ctk.CTkFrame(self.recent_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=2)
 
-            # ---- Txn # ----
             ctk.CTkLabel(row, text=f"#{t['transaction_id']}",
                          width=60, anchor="w",
                          font=font_bold(11),
                          text_color=ACCENT).pack(side="left", padx=(8, 4), pady=6)
 
-            # ---- Cashier ----
             ctk.CTkLabel(row,
                          text=t["full_name"] or t["username"] or "-",
                          width=120, anchor="w",
                          font=font(11),
                          text_color=FG_PRIMARY).pack(side="left", padx=4)
 
-            # ---- Payment ----
             pay_color = SUCCESS if t["payment_method"] == "Cash" else ACCENT
             ctk.CTkLabel(row, text=t["payment_method"],
                          width=70, anchor="w",
                          font=font_bold(11),
                          text_color=pay_color).pack(side="left", padx=4)
 
-            # ---- Date ----
             ctk.CTkLabel(row, text=(t["created_at"] or "")[:16],
                          width=130, anchor="w",
                          font=font(10),
                          text_color=FG_SECONDARY).pack(side="left", padx=4)
 
-            # ---- Total ----
             ctk.CTkLabel(row, text=f"₱{t['total']:.2f}",
                          width=80, anchor="e",
                          font=font_bold(12),
                          text_color=ACCENT).pack(side="right", padx=(4, 8))
 
+        # ---- Update pager ----
+        self._update_pager(self.recent_pager,
+                           self.recent_page, self.recent_total_pages)
+
     # ─────────────────────────────────────────────
-    # LOW STOCK
+    # LOW STOCK (paginated)
     # ─────────────────────────────────────────────
 
     def _render_low_stock(self):
         for w in self.lowstock_frame.winfo_children():
             w.destroy()
 
-        rows = DashboardController.low_stock_products(limit=5)
+        # ---- Fetch all, then slice ----
+        rows = DashboardController.low_stock_products(limit=500)
 
-        if not rows:
+        total = len(rows)
+        self.lowstock_total_pages = max(1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+
+        # ---- Clamp current page ----
+        if self.lowstock_page > self.lowstock_total_pages:
+            self.lowstock_page = self.lowstock_total_pages
+
+        start = (self.lowstock_page - 1) * self.PAGE_SIZE
+        end = start + self.PAGE_SIZE
+        page_rows = rows[start:end]
+
+        # ---- Empty state ----
+        if not page_rows:
             ctk.CTkLabel(self.lowstock_frame,
                          text="All products are well-stocked.",
                          font=font(11),
                          text_color=FG_MUTED).pack(pady=30)
+            self._update_pager(self.lowstock_pager, 1, 1)
             return
 
-        for i, p in enumerate(rows):
+        # ---- Render rows ----
+        for i, p in enumerate(page_rows):
             bg = BG_ROW_ALT if i % 2 else "transparent"
 
             row = ctk.CTkFrame(self.lowstock_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=2)
 
-            # ---- Name ----
             ctk.CTkLabel(row, text=p["name"],
                          width=170, anchor="w",
                          font=font_bold(11),
                          text_color=FG_PRIMARY).pack(side="left", padx=(8, 4), pady=6)
 
-            # ---- Category ----
             ctk.CTkLabel(row, text=p["category_name"] or "-",
                          width=90, anchor="w",
                          font=font(10),
                          text_color=FG_SECONDARY).pack(side="left", padx=4)
 
-            # ---- Stock badge ----
             stock = p["stock_qty"]
             if stock <= 0:
                 stock_text = "Out"
@@ -295,8 +396,47 @@ class DashboardView(ctk.CTkFrame):
                          font=font_bold(11),
                          text_color=stock_color).pack(side="left", padx=4)
 
-            # ---- Low level ----
             ctk.CTkLabel(row, text=f"min {p['low_stock_level']}",
                          width=60, anchor="e",
                          font=font(10),
                          text_color=FG_MUTED).pack(side="right", padx=(4, 8))
+
+        # ---- Update pager ----
+        self._update_pager(self.lowstock_pager,
+                           self.lowstock_page, self.lowstock_total_pages)
+
+    # ─────────────────────────────────────────────
+    # PAGER STATE UPDATE
+    # ─────────────────────────────────────────────
+
+    def _update_pager(self, pager, current, total):
+        """Enable/disable Prev/Next and update the label."""
+        pager["label"].configure(text=f"Page {current} of {total}")
+
+        # ---- Prev button ----
+        if current <= 1:
+            pager["prev"].configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            pager["prev"].configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
+        # ---- Next button ----
+        if current >= total:
+            pager["next"].configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            pager["next"].configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )

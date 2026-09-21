@@ -56,18 +56,21 @@ class POSController:
     # CHECKOUT
     # ─────────────────────────────────────────────
 
-    def checkout(self, user, payment_method, amount_paid):
+    def checkout(self, user, payment_method, amount_paid,
+                 gcash_reference=None):
         if not self.cart:
             return False, "Cart is empty.", 0
 
         ok, result, change = create_transaction(
-            user["user_id"], self.cart, payment_method, amount_paid
+            user["user_id"], self.cart, payment_method, amount_paid,
+            gcash_reference
         )
         if ok:
+            ref_str = f" | Ref: {gcash_reference}" if gcash_reference else ""
             log_action(
                 user["user_id"],
                 "SALE",
-                f"Txn #{result} | Total: {self.get_total():.2f} | {payment_method}"
+                f"Txn #{result} | Total: {self.get_total():.2f} | {payment_method}{ref_str}"
             )
             self.clear_cart()
         return ok, result, change

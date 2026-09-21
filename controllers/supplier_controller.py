@@ -19,8 +19,8 @@ class SupplierController:
     # ─────────────────────────────────────────────
 
     @staticmethod
-    def list_suppliers():
-        return get_all_suppliers()
+    def list_suppliers(include_archived=False):
+        return get_all_suppliers(include_archived)
 
     @staticmethod
     def add(user, name, contact, address, supplier_category_id):

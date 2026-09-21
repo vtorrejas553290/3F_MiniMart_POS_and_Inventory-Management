@@ -23,6 +23,9 @@ from config import (
 
 class ReportsView(ctk.CTkFrame):
 
+    # ---- Pagination size ----
+    PAGE_SIZE = 10
+
     # ─────────────────────────────────────────────
     # BUTTON COLORS
     # ─────────────────────────────────────────────
@@ -47,6 +50,10 @@ class ReportsView(ctk.CTkFrame):
         # ---- Active quick-range button ----
         self.active_range_button = None
         self._programmatic_set = False
+
+        # ---- Pagination state ----
+        self.current_page = 1
+        self.total_pages = 1
 
         self._build()
         self._refresh_transactions()
@@ -124,18 +131,18 @@ class ReportsView(ctk.CTkFrame):
         ctk.CTkFrame(summary_card, width=1, fg_color=BORDER).pack(
             side="left", fill="y", pady=14)
 
-        # ---- Right: Payment breakdown (fixed width) ----
+        # ---- Right: Payment breakdown ----
         right_stat = ctk.CTkFrame(summary_card, fg_color="transparent",
-                                  width=260)     # ---- fixed width ----
+                                  width=260)
         right_stat.pack(side="left", fill="y", padx=20, pady=14)
-        right_stat.pack_propagate(False)         # ---- keep 260px ----
+        right_stat.pack_propagate(False)
 
         ctk.CTkLabel(right_stat, text="PAYMENT BREAKDOWN",
                      font=font_bold(10),
                      text_color=FG_SECONDARY,
                      anchor="w").pack(fill="x")
 
-        # ---- Cash row (label + amount on same line, close together) ----
+        # ---- Cash row ----
         cash_row = ctk.CTkFrame(right_stat, fg_color="transparent")
         cash_row.pack(fill="x", pady=(6, 0))
 
@@ -159,7 +166,7 @@ class ReportsView(ctk.CTkFrame):
                                               text_color=ACCENT)
         self.gcash_total_label.pack(side="right")
 
-        # ---- Date range label (far right of the card) ----
+        # ---- Date range label ----
         self.range_label = ctk.CTkLabel(summary_card, text="",
                                         font=font(10),
                                         text_color=FG_MUTED)
@@ -323,7 +330,7 @@ class ReportsView(ctk.CTkFrame):
         self.count_label.pack(side="right", padx=(0, 4))
 
         # ═════════════════════════════════════════
-        # LIST CARD (fills all remaining space)
+        # LIST CARD
         # ═════════════════════════════════════════
 
         list_card = ctk.CTkFrame(self, fg_color=BG_CARD,
@@ -335,12 +342,90 @@ class ReportsView(ctk.CTkFrame):
         self.list_frame = ctk.CTkScrollableFrame(list_card, fg_color="transparent")
         self.list_frame.pack(fill="both", expand=True, padx=8, pady=8)
 
+        # ═════════════════════════════════════════
+        # PAGINATION CONTROLS
+        # ═════════════════════════════════════════
+
+        pager = ctk.CTkFrame(list_card, fg_color="transparent")
+        pager.pack(fill="x", padx=12, pady=(0, 12))
+
+        self.prev_btn = ctk.CTkButton(
+            pager, text="‹ Prev",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(-1),
+        )
+        self.prev_btn.pack(side="left")
+
+        self.page_label = ctk.CTkLabel(
+            pager, text="Page 1 of 1",
+            font=font_bold(11),
+            text_color=FG_SECONDARY,
+        )
+        self.page_label.pack(side="left", fill="x", expand=True)
+
+        self.next_btn = ctk.CTkButton(
+            pager, text="Next ›",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(+1),
+        )
+        self.next_btn.pack(side="right")
+
+    # ─────────────────────────────────────────────
+    # PAGINATION
+    # ─────────────────────────────────────────────
+
+    def _change_page(self, delta):
+        new_page = self.current_page + delta
+        if 1 <= new_page <= self.total_pages:
+            self.current_page = new_page
+            self._refresh_transactions()
+
+    def _update_pager(self):
+        self.page_label.configure(
+            text=f"Page {self.current_page} of {self.total_pages}"
+        )
+
+        if self.current_page <= 1:
+            self.prev_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.prev_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
+        if self.current_page >= self.total_pages:
+            self.next_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.next_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
     # ─────────────────────────────────────────────
     # FILTERS — SEARCH
     # ─────────────────────────────────────────────
 
     def _on_search_change(self, *args):
         self.search_query = self.search_var.get().strip().lower()
+        self.current_page = 1
         self._refresh_transactions()
 
     def _clear_search(self):
@@ -352,6 +437,7 @@ class ReportsView(ctk.CTkFrame):
 
     def _on_payment_change(self, choice):
         self.payment_filter = choice
+        self.current_page = 1
         self._refresh_transactions()
 
     # ─────────────────────────────────────────────
@@ -399,6 +485,7 @@ class ReportsView(ctk.CTkFrame):
         self._clear_button_highlight()
         self.date_from = d_from
         self.date_to = d_to
+        self.current_page = 1
         self._refresh_transactions()
 
     def _is_valid_date(self, text):
@@ -443,6 +530,7 @@ class ReportsView(ctk.CTkFrame):
 
         self.date_from = d_from
         self.date_to = d_to
+        self.current_page = 1
         self._highlight_button(button)
         self._refresh_transactions()
 
@@ -490,7 +578,18 @@ class ReportsView(ctk.CTkFrame):
         for w in self.list_frame.winfo_children():
             w.destroy()
 
-        self.count_label.configure(text=f"{len(transactions)} transaction(s)")
+        # ---- Total count ----
+        total = len(transactions)
+        self.count_label.configure(text=f"{total} transaction(s)")
+
+        # ---- Pagination math ----
+        self.total_pages = max(1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        if self.current_page > self.total_pages:
+            self.current_page = self.total_pages
+
+        start = (self.current_page - 1) * self.PAGE_SIZE
+        end = start + self.PAGE_SIZE
+        page_rows = transactions[start:end]
 
         header = ctk.CTkFrame(self.list_frame, fg_color="transparent")
         header.pack(fill="x", pady=(4, 8))
@@ -511,15 +610,19 @@ class ReportsView(ctk.CTkFrame):
                          font=font_bold(11),
                          text_color=FG_SECONDARY).pack(side="left", padx=3)
 
-        if not transactions:
+        if not page_rows:
             ctk.CTkLabel(self.list_frame,
                          text="No transactions match your filters.",
                          font=font(12),
                          text_color=FG_MUTED).pack(pady=30)
+            self._update_pager()
             return
 
-        for i, t in enumerate(transactions):
+        for i, t in enumerate(page_rows):
             self._render_row(t, i)
+
+        # ---- Update pager ----
+        self._update_pager()
 
     def _render_row(self, t, txn_index=0):
         items = ReportController.transaction_items(t["transaction_id"])
@@ -685,6 +788,12 @@ class TransactionDetailDialog(ctk.CTkToplevel):
         rows = [
             ("Cashier",       t["full_name"] or t["username"]),
             ("Payment",       t["payment_method"]),
+        ]
+        if t["payment_method"] == "GCash":
+            ref = t["gcash_reference"]
+            if ref:
+                rows.append(("GCash Reference", ref))
+        rows += [
             ("Amount Paid",   f"₱{t['amount_paid']:.2f}"),
             ("Change",        f"₱{t['change_due']:.2f}"),
             ("Total",         f"₱{t['total']:.2f}"),

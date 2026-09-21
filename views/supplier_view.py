@@ -23,6 +23,9 @@ from config import (
 
 class SupplierView(ctk.CTkFrame):
 
+    # ---- Pagination size ----
+    PAGE_SIZE = 10
+
     # ─────────────────────────────────────────────
     # SETUP
     # ─────────────────────────────────────────────
@@ -34,6 +37,11 @@ class SupplierView(ctk.CTkFrame):
         self.supplier_categories = SupplierController.list_supplier_categories()
         self.selected_category_id = None
         self.search_query = ""
+
+        # ---- Pagination state ----
+        self.current_page = 1
+        self.total_pages = 1
+
         self._build()
         self._load()
 
@@ -92,7 +100,6 @@ class SupplierView(ctk.CTkFrame):
         row1 = ctk.CTkFrame(filter_card, fg_color="transparent")
         row1.pack(fill="x", padx=16, pady=(14, 6))
 
-        # ---- Search ----
         ctk.CTkLabel(row1, text="Search",
                      font=font_bold(11),
                      text_color=FG_SECONDARY).pack(side="left", padx=(0, 10))
@@ -174,12 +181,91 @@ class SupplierView(ctk.CTkFrame):
         self.list_frame = ctk.CTkScrollableFrame(list_card, fg_color="transparent")
         self.list_frame.pack(fill="both", expand=True, padx=8, pady=8)
 
+        # ═════════════════════════════════════════
+        # PAGINATION CONTROLS
+        # ═════════════════════════════════════════
+
+        pager = ctk.CTkFrame(list_card, fg_color="transparent")
+        pager.pack(fill="x", padx=12, pady=(0, 12))
+
+        self.prev_btn = ctk.CTkButton(
+            pager, text="‹ Prev",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(-1),
+        )
+        self.prev_btn.pack(side="left")
+
+        self.page_label = ctk.CTkLabel(
+            pager, text="Page 1 of 1",
+            font=font_bold(11),
+            text_color=FG_SECONDARY,
+        )
+        self.page_label.pack(side="left", fill="x", expand=True)
+
+        self.next_btn = ctk.CTkButton(
+            pager, text="Next ›",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(+1),
+        )
+        self.next_btn.pack(side="right")
+
+    # ─────────────────────────────────────────────
+    # PAGINATION
+    # ─────────────────────────────────────────────
+
+    def _change_page(self, delta):
+        new_page = self.current_page + delta
+        if 1 <= new_page <= self.total_pages:
+            self.current_page = new_page
+            self._load()
+
+    def _update_pager(self):
+        """Enable/disable Prev/Next and update the label."""
+        self.page_label.configure(
+            text=f"Page {self.current_page} of {self.total_pages}"
+        )
+
+        if self.current_page <= 1:
+            self.prev_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.prev_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
+        if self.current_page >= self.total_pages:
+            self.next_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.next_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
     # ─────────────────────────────────────────────
     # SEARCH
     # ─────────────────────────────────────────────
 
     def _on_search_change(self, *args):
         self.search_query = self.search_var.get().strip().lower()
+        self.current_page = 1     # ---- reset to page 1 on search ----
         self._load()
 
     def _clear_search(self):
@@ -198,10 +284,12 @@ class SupplierView(ctk.CTkFrame):
                 if c["name"] == choice:
                     self.selected_category_id = c["scat_id"]
                     break
+        self.current_page = 1     # ---- reset on category change ----
         self._load()
 
     def _toggle_archived(self):
         self.show_archived = self.archive_var.get()
+        self.current_page = 1     # ---- reset on archive toggle ----
         self._load()
 
     # ─────────────────────────────────────────────
@@ -209,10 +297,10 @@ class SupplierView(ctk.CTkFrame):
     # ─────────────────────────────────────────────
 
     def _load(self):
-        suppliers = SupplierController.list_suppliers()
-
-        if not self.show_archived:
-            suppliers = [s for s in suppliers if s["is_archived"] == 0]
+        # ---- Let the controller decide whether to include archived ----
+        suppliers = SupplierController.list_suppliers(
+            include_archived=self.show_archived
+        )
 
         if self.selected_category_id is not None:
             suppliers = [
@@ -243,7 +331,18 @@ class SupplierView(ctk.CTkFrame):
         for w in self.list_frame.winfo_children():
             w.destroy()
 
-        self.count_label.configure(text=f"{len(suppliers)} supplier(s)")
+        # ---- Total count ----
+        total = len(suppliers)
+        self.count_label.configure(text=f"{total} supplier(s)")
+
+        # ---- Pagination math ----
+        self.total_pages = max(1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        if self.current_page > self.total_pages:
+            self.current_page = self.total_pages
+
+        start = (self.current_page - 1) * self.PAGE_SIZE
+        end = start + self.PAGE_SIZE
+        page_suppliers = suppliers[start:end]
 
         # ---- Header ----
         header = ctk.CTkFrame(self.list_frame, fg_color="transparent")
@@ -261,17 +360,21 @@ class SupplierView(ctk.CTkFrame):
                          text_color=FG_SECONDARY).pack(side="left", padx=4)
 
         # ---- Empty state ----
-        if not suppliers:
+        if not page_suppliers:
             msg = "No suppliers match your search." if self.search_query \
                   else "No suppliers to show."
             ctk.CTkLabel(self.list_frame, text=msg,
                          font=font(12),
                          text_color=FG_MUTED).pack(pady=30)
+            self._update_pager()
             return
 
         # ---- Rows ----
-        for i, s in enumerate(suppliers):
+        for i, s in enumerate(page_suppliers):
             self._render_row(s, i)
+
+        # ---- Update pager ----
+        self._update_pager()
 
     def _render_row(self, s, index=0):
         # ---- Zebra striping ----
@@ -426,13 +529,11 @@ class SupplierDialog(ctk.CTkToplevel):
     def _build(self):
         s = self.supplier
 
-        # ---- Title ----
         ctk.CTkLabel(self,
                      text="Edit Supplier" if s else "New Supplier",
                      font=font_bold(16),
                      text_color=FG_PRIMARY).pack(pady=(16, 4))
 
-        # ---- Card ----
         card = ctk.CTkFrame(self, fg_color=BG_CARD,
                             corner_radius=12,
                             border_width=1,
@@ -637,14 +738,12 @@ class SupplierCategoryDialog(ctk.CTkToplevel):
                      font=font_bold(16),
                      text_color=FG_PRIMARY).pack(pady=(16, 4))
 
-        # ---- Card ----
         card = ctk.CTkFrame(self, fg_color=BG_CARD,
                             corner_radius=12,
                             border_width=1,
                             border_color=BORDER)
         card.pack(fill="both", expand=True, padx=16, pady=(8, 16))
 
-        # ---- Add row ----
         add_row = ctk.CTkFrame(card, fg_color="transparent")
         add_row.pack(fill="x", padx=14, pady=(14, 4))
 
@@ -663,7 +762,6 @@ class SupplierCategoryDialog(ctk.CTkToplevel):
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
                       command=self._add).pack(side="left")
 
-        # ---- Description ----
         self.desc_e = ctk.CTkEntry(card, height=36,
                                    placeholder_text="Description (optional)",
                                    corner_radius=8,
@@ -673,7 +771,6 @@ class SupplierCategoryDialog(ctk.CTkToplevel):
                                    border_width=1)
         self.desc_e.pack(fill="x", padx=14, pady=(0, 10))
 
-        # ---- List ----
         self.list_frame = ctk.CTkScrollableFrame(card, fg_color="transparent")
         self.list_frame.pack(fill="both", expand=True, padx=14, pady=(4, 14))
 

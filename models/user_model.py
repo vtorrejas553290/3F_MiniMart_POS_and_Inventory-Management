@@ -5,7 +5,32 @@
 from database import get_connection, now_local
 
 
-# ---- Read ----
+# ─────────────────────────────────────────────
+# HELPER — combine first / middle / last
+# ─────────────────────────────────────────────
+
+def _build_full_name(first, middle, last):
+    """Join the name parts into a display name."""
+    parts = [p for p in (first, middle, last) if p and p.strip()]
+    return " ".join(parts)
+
+
+def _row_with_full_name(row):
+    """Return a dict with a computed `full_name` key."""
+    if row is None:
+        return None
+    d = dict(row)
+    d["full_name"] = _build_full_name(
+        d.get("first_name"),
+        d.get("middle_name"),
+        d.get("last_name"),
+    )
+    return d
+
+
+# ─────────────────────────────────────────────
+# READ
+# ─────────────────────────────────────────────
 
 def get_user_by_username(username):
     conn = get_connection()
@@ -14,7 +39,7 @@ def get_user_by_username(username):
         (username,)
     ).fetchone()
     conn.close()
-    return row
+    return _row_with_full_name(row)
 
 
 def get_user_by_id(user_id):
@@ -24,7 +49,7 @@ def get_user_by_id(user_id):
         (user_id,)
     ).fetchone()
     conn.close()
-    return row
+    return _row_with_full_name(row)
 
 
 def get_all_users():
@@ -33,48 +58,12 @@ def get_all_users():
         "SELECT * FROM users ORDER BY role, username"
     ).fetchall()
     conn.close()
-    return rows
+    return [_row_with_full_name(r) for r in rows]
 
 
-# ---- Write ----
-
-def create_user(username, password, full_name, role):
-    conn = get_connection()
-    try:
-        conn.execute("""
-            INSERT INTO users (username, password, full_name, role)
-            VALUES (?, ?, ?, ?)
-        """, (username, password, full_name, role))
-        conn.commit()
-        return True, "User created."
-    except Exception as e:
-        return False, str(e)
-    finally:
-        conn.close()
 # ─────────────────────────────────────────────
-# USER MANAGEMENT
+# WRITE
 # ─────────────────────────────────────────────
-
-def get_all_users():
-    """Return every user (sorted by role then username)."""
-    conn = get_connection()
-    rows = conn.execute("""
-        SELECT * FROM users
-        ORDER BY role, username
-    """).fetchall()
-    conn.close()
-    return rows
-
-
-def get_user_by_id(user_id):
-    conn = get_connection()
-    row = conn.execute(
-        "SELECT * FROM users WHERE user_id = ?",
-        (user_id,)
-    ).fetchone()
-    conn.close()
-    return row
-
 
 def username_exists(username):
     conn = get_connection()
@@ -86,15 +75,16 @@ def username_exists(username):
     return row is not None
 
 
-def create_user(username, password, full_name, role):
-    """Create a new user. Returns (success, message)."""
+def create_user(username, password, first_name, middle_name, last_name, role):
     conn = get_connection()
     try:
         conn.execute("""
-            INSERT INTO users (username, password, full_name, role,
-                               is_active, created_at)
-            VALUES (?, ?, ?, ?, 1, ?)
-        """, (username, password, full_name, role, now_local()))
+            INSERT INTO users
+                (username, password, first_name, middle_name, last_name,
+                 role, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+        """, (username, password, first_name, middle_name, last_name,
+              role, now_local()))
         conn.commit()
         return True, "User created."
     except Exception as e:
@@ -103,22 +93,26 @@ def create_user(username, password, full_name, role):
         conn.close()
 
 
-def update_user(user_id, full_name, role, is_active, password=None):
-    """Update a user. If password is None, keep the existing password."""
+def update_user(user_id, first_name, middle_name, last_name,
+                role, is_active, password=None):
     conn = get_connection()
     try:
         if password:
             conn.execute("""
                 UPDATE users
-                SET full_name = ?, role = ?, is_active = ?, password = ?
+                SET first_name = ?, middle_name = ?, last_name = ?,
+                    role = ?, is_active = ?, password = ?
                 WHERE user_id = ?
-            """, (full_name, role, is_active, password, user_id))
+            """, (first_name, middle_name, last_name,
+                  role, is_active, password, user_id))
         else:
             conn.execute("""
                 UPDATE users
-                SET full_name = ?, role = ?, is_active = ?
+                SET first_name = ?, middle_name = ?, last_name = ?,
+                    role = ?, is_active = ?
                 WHERE user_id = ?
-            """, (full_name, role, is_active, user_id))
+            """, (first_name, middle_name, last_name,
+                  role, is_active, user_id))
         conn.commit()
         return True, "User updated."
     except Exception as e:

@@ -58,7 +58,7 @@ class MainWindow(ctk.CTk):
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 
-        # ---- Brand (auto-sizing) ----
+        # ---- Brand ----
         brand = ctk.CTkFrame(sidebar, fg_color="transparent")
         brand.pack(fill="x", padx=18, pady=(24, 8))
 
@@ -93,17 +93,18 @@ class MainWindow(ctk.CTk):
                      text_color="#94A3B8",
                      anchor="w").pack(fill="x", padx=22, pady=(4, 4))
 
-        # ---- Navigation (role-based) ----
+        # ---- Navigation (everyone) ----
         self._nav_button(sidebar, "dashboard", "🏠   Dashboard",        self._show_dashboard)
-        self._nav_button(sidebar, "pos",       "🛒   POS / Sales",       self._show_pos)
+        self._nav_button(sidebar, "pos",       "🛒   POS",       self._show_pos)
         self._nav_button(sidebar, "inventory", "📦   Inventory",         self._show_inventory)
-        self._nav_button(sidebar, "suppliers", "🏢   Suppliers",         self._show_suppliers)
-        self._nav_button(sidebar, "purchases", "📋   Purchase Records",  self._show_purchases)
-        self._nav_button(sidebar, "reports",   "📊   Reports",           self._show_reports)
+        self._nav_button(sidebar, "reports",   "📊   Sales Reports",           self._show_reports)
 
+        # ---- Admin-only ----
         if AuthController.is_admin():
-            self._nav_button(sidebar, "users", "👤   User Management",  self._show_users)
-            self._nav_button(sidebar, "logs",  "📝   Activity Logs",     self._show_logs)
+            self._nav_button(sidebar, "suppliers", "🏢   Suppliers",         self._show_suppliers)
+            self._nav_button(sidebar, "purchases", "📋   Purchase Records",  self._show_purchases)
+            self._nav_button(sidebar, "users",     "👤   User Management",   self._show_users)
+            self._nav_button(sidebar, "logs",      "📝   Activity Logs",     self._show_logs)
 
         # ---- Logout ----
         ctk.CTkButton(
@@ -155,17 +156,14 @@ class MainWindow(ctk.CTk):
         self.nav_buttons[key] = btn
 
     def _navigate(self, key, command):
-        # ---- Reset all nav buttons ----
         for k, btn in self.nav_buttons.items():
             btn.configure(fg_color="transparent", text_color=FG_ON_BRAND)
 
-        # ---- Highlight active ----
         if key in self.nav_buttons:
             self.nav_buttons[key].configure(
                 fg_color=BRAND_GREEN, text_color="#FFFFFF"
             )
 
-        # ---- Run view ----
         command()
 
     def _navigate_by_key(self, key):
@@ -209,25 +207,37 @@ class MainWindow(ctk.CTk):
         self._clear_content()
         InventoryView(self.content, self.user).pack(fill="both", expand=True)
 
-    def _show_suppliers(self):
-        self._clear_content()
-        SupplierView(self.content, self.user).pack(fill="both", expand=True)
-
-    def _show_purchases(self):
-        self._clear_content()
-        PurchaseView(self.content, self.user).pack(fill="both", expand=True)
-
     def _show_reports(self):
         self._clear_content()
         ReportsView(self.content, self.user).pack(fill="both", expand=True)
 
+    # ─────────────────────────────────────────────
+    # ADMIN-ONLY HANDLERS
+    # ─────────────────────────────────────────────
+
+    def _show_suppliers(self):
+        if not AuthController.is_admin():
+            return
+        self._clear_content()
+        SupplierView(self.content, self.user).pack(fill="both", expand=True)
+
+    def _show_purchases(self):
+        if not AuthController.is_admin():
+            return
+        self._clear_content()
+        PurchaseView(self.content, self.user).pack(fill="both", expand=True)
+
     def _show_users(self):
+        if not AuthController.is_admin():
+            return
         self._clear_content()
         UserManagementView(self.content, self.user).pack(
             fill="both", expand=True
         )
 
     def _show_logs(self):
+        if not AuthController.is_admin():
+            return
         self._clear_content()
         ActivityLogView(self.content, self.user).pack(fill="both", expand=True)
 
@@ -236,7 +246,6 @@ class MainWindow(ctk.CTk):
     # ─────────────────────────────────────────────
 
     def _logout(self):
-        # ---- Ask for confirmation first ----
         confirm = messagebox.askyesno(
             "Confirm Logout",
             "Are you sure you want to log out?",
@@ -245,7 +254,6 @@ class MainWindow(ctk.CTk):
         if not confirm:
             return
 
-        # ---- Proceed with logout ----
         AuthController.logout()
         self.destroy()
 

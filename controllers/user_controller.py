@@ -32,19 +32,24 @@ class UserController:
     # ─────────────────────────────────────────────
 
     @staticmethod
-    def add_user(admin_user, username, password, full_name):
+    def add_user(admin_user, username, password,
+                 first_name, middle_name, last_name):
         """
         Create a new STAFF user.
-        Role is always 'staff' — admin accounts can only be added directly in the DB.
+        Role is always 'staff' — admin accounts can only be added in the DB.
         """
         username = username.strip().lower()
-        full_name = full_name.strip()
+        first_name = first_name.strip()
+        middle_name = (middle_name or "").strip() or None
+        last_name = last_name.strip()
 
         # ---- Validation ----
         if not username:
             return False, "Username is required."
-        if not full_name:
-            return False, "Full name is required."
+        if not first_name:
+            return False, "First name is required."
+        if not last_name:
+            return False, "Last name is required."
         if not password:
             return False, "Password is required."
         if len(password) < MIN_PASSWORD_LENGTH:
@@ -52,45 +57,51 @@ class UserController:
         if username_exists(username):
             return False, f"Username '{username}' is already taken."
 
-        # ---- Force role to staff ----
-        ok, msg = create_user(username, password, full_name, "staff")
+        ok, msg = create_user(username, password,
+                              first_name, middle_name, last_name,
+                              "staff")
         if ok:
-            log_action(admin_user["user_id"], "ADD_USER",
-                       f"{username} (staff)")
+            log_action(admin_user["user_id"], "ADD_USER", f"{username} (staff)")
         return ok, msg
 
     @staticmethod
-    def edit_user(admin_user, user_id, full_name, new_password=None):
+    def edit_user(admin_user, user_id,
+                  first_name, middle_name, last_name,
+                  new_password=None):
         """
-        Update a user's full name and optionally their password.
+        Update a user's name and optionally their password.
         Role is intentionally NOT editable — staff stay staff.
         """
-        full_name = full_name.strip()
+        first_name = first_name.strip()
+        middle_name = (middle_name or "").strip() or None
+        last_name = last_name.strip()
 
-        if not full_name:
-            return False, "Full name is required."
+        if not first_name:
+            return False, "First name is required."
+        if not last_name:
+            return False, "Last name is required."
         if new_password is not None and len(new_password) < MIN_PASSWORD_LENGTH:
             return False, f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
 
-        # ---- Fetch existing user to preserve role + active state ----
         user = get_user_by_id(user_id)
         if not user:
             return False, "User not found."
 
-        # ---- Protect the admin account from being modified here ----
+        # ---- Protect admin accounts ----
         if user["role"] == "admin":
             return False, "Admin accounts cannot be edited from this screen."
 
         ok, msg = update_user(
             user_id,
-            full_name,
+            first_name, middle_name, last_name,
             user["role"],
             user["is_active"],
             new_password,
         )
         if ok:
+            full = " ".join(p for p in (first_name, middle_name, last_name) if p)
             log_action(admin_user["user_id"], "UPDATE_USER",
-                       f"ID {user_id} - {full_name}")
+                       f"ID {user_id} - {full}")
         return ok, msg
 
     @staticmethod
@@ -102,8 +113,6 @@ class UserController:
         user = get_user_by_id(user_id)
         if not user:
             return False, "User not found."
-
-        # ---- Do not allow deactivating an admin ----
         if user["role"] == "admin":
             return False, "Admin accounts cannot be deactivated."
 

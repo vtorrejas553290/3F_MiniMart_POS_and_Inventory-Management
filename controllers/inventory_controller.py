@@ -25,8 +25,8 @@ class InventoryController:
         return get_all_products()
 
     @staticmethod
-    def list_by_category(category_id):
-        return get_products_by_category(category_id)
+    def list_by_category(category_id, include_archived=False):
+        return get_products_by_category(category_id, include_archived)
 
     @staticmethod
     def list_by_supplier(supplier_id):

@@ -7,6 +7,7 @@ from PIL import Image
 import customtkinter as ctk
 from tkinter import messagebox
 
+from controllers.auth_controller import AuthController
 from controllers.inventory_controller import InventoryController
 from controllers.supplier_controller import SupplierController
 from utils import prepare_dialog_screen, pick_image_file, save_product_image
@@ -26,6 +27,9 @@ from config import (
 
 class InventoryView(ctk.CTkFrame):
 
+    # ---- Pagination size ----
+    PAGE_SIZE = 10
+
     # ─────────────────────────────────────────────
     # SETUP
     # ─────────────────────────────────────────────
@@ -37,6 +41,11 @@ class InventoryView(ctk.CTkFrame):
         self.selected_category_id = None
         self.show_archived = False
         self.search_query = ""
+
+        # ---- Pagination state ----
+        self.current_page = 1
+        self.total_pages = 1
+
         self._build()
         self._load()
 
@@ -52,7 +61,6 @@ class InventoryView(ctk.CTkFrame):
         header_frame = ctk.CTkFrame(self, fg_color="transparent")
         header_frame.pack(fill="x", padx=20, pady=(20, 10))
 
-        # ---- Left side: title + subtitle ----
         title_box = ctk.CTkFrame(header_frame, fg_color="transparent")
         title_box.pack(side="left")
 
@@ -66,21 +74,22 @@ class InventoryView(ctk.CTkFrame):
                      text_color=FG_SECONDARY,
                      anchor="w").pack(fill="x", pady=(2, 0))
 
-        # ---- Right side: primary actions ----
-        actions = ctk.CTkFrame(header_frame, fg_color="transparent")
-        actions.pack(side="right")
+        # ---- Right side: primary actions (admin only) ----
+        if AuthController.is_admin():
+            actions = ctk.CTkFrame(header_frame, fg_color="transparent")
+            actions.pack(side="right")
 
-        ctk.CTkButton(actions, text="+ Add Product",
-                      height=38, corner_radius=8,
-                      font=font_bold(12),
-                      fg_color=ACCENT, hover_color=ACCENT_HOVER,
-                      command=self._add_dialog).pack(side="right", padx=(6, 0))
+            ctk.CTkButton(actions, text="+ Add Product",
+                          height=38, corner_radius=8,
+                          font=font_bold(12),
+                          fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                          command=self._add_dialog).pack(side="right", padx=(6, 0))
 
-        ctk.CTkButton(actions, text="+ Add Category",
-                      height=38, corner_radius=8,
-                      font=font_bold(12),
-                      fg_color=BRAND_GREEN, hover_color="#1E9040",
-                      command=self._add_category_dialog).pack(side="right", padx=(6, 0))
+            ctk.CTkButton(actions, text="+ Add Category",
+                          height=38, corner_radius=8,
+                          font=font_bold(12),
+                          fg_color=BRAND_GREEN, hover_color="#1E9040",
+                          command=self._add_category_dialog).pack(side="right", padx=(6, 0))
 
         # ═════════════════════════════════════════
         # FILTER CARD
@@ -96,7 +105,6 @@ class InventoryView(ctk.CTkFrame):
         row1 = ctk.CTkFrame(filter_card, fg_color="transparent")
         row1.pack(fill="x", padx=16, pady=(14, 6))
 
-        # ---- Search ----
         ctk.CTkLabel(row1, text="Search",
                      font=font_bold(11),
                      text_color=FG_SECONDARY).pack(side="left", padx=(0, 10))
@@ -196,12 +204,93 @@ class InventoryView(ctk.CTkFrame):
         )
         self.list_frame.pack(fill="both", expand=True, padx=8, pady=8)
 
+        # ═════════════════════════════════════════
+        # PAGINATION CONTROLS
+        # ═════════════════════════════════════════
+
+        pager = ctk.CTkFrame(list_card, fg_color="transparent")
+        pager.pack(fill="x", padx=12, pady=(0, 12))
+
+        self.prev_btn = ctk.CTkButton(
+            pager, text="‹ Prev",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(-1),
+        )
+        self.prev_btn.pack(side="left")
+
+        self.page_label = ctk.CTkLabel(
+            pager, text="Page 1 of 1",
+            font=font_bold(11),
+            text_color=FG_SECONDARY,
+        )
+        self.page_label.pack(side="left", fill="x", expand=True)
+
+        self.next_btn = ctk.CTkButton(
+            pager, text="Next ›",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(+1),
+        )
+        self.next_btn.pack(side="right")
+
+    # ─────────────────────────────────────────────
+    # PAGINATION
+    # ─────────────────────────────────────────────
+
+    def _change_page(self, delta):
+        new_page = self.current_page + delta
+        if 1 <= new_page <= self.total_pages:
+            self.current_page = new_page
+            self._load()
+
+    def _update_pager(self):
+        """Enable/disable Prev/Next and update the label."""
+        self.page_label.configure(
+            text=f"Page {self.current_page} of {self.total_pages}"
+        )
+
+        # ---- Prev button ----
+        if self.current_page <= 1:
+            self.prev_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.prev_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
+        # ---- Next button ----
+        if self.current_page >= self.total_pages:
+            self.next_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.next_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
     # ─────────────────────────────────────────────
     # SEARCH
     # ─────────────────────────────────────────────
 
     def _on_search_change(self, *args):
         self.search_query = self.search_var.get().strip().lower()
+        self.current_page = 1     # ---- reset to page 1 on search ----
         self._load()
 
     def _clear_search(self):
@@ -220,10 +309,12 @@ class InventoryView(ctk.CTkFrame):
                 if c["name"] == choice:
                     self.selected_category_id = c["category_id"]
                     break
+        self.current_page = 1     # ---- reset to page 1 on category change ----
         self._load()
 
     def _toggle_archived(self):
         self.show_archived = self.archive_var.get()
+        self.current_page = 1     # ---- reset to page 1 on toggle ----
         self._load()
 
     # ─────────────────────────────────────────────
@@ -231,26 +322,26 @@ class InventoryView(ctk.CTkFrame):
     # ─────────────────────────────────────────────
 
     def _load(self):
-        products = InventoryController.list_by_category(self.selected_category_id)
+        # ---- Let the controller decide whether to include archived ----
+        products = InventoryController.list_by_category(
+            self.selected_category_id,
+            include_archived=self.show_archived,
+        )
 
-        # ---- Filter archived ----
-        if not self.show_archived:
-            products = [p for p in products if p["is_archived"] == 0]
-
-        # ---- Apply search ----
         if self.search_query:
             products = [p for p in products if self._matches_search(p)]
 
         self._render(products)
 
     def _load_low(self):
+        # ---- list_low_stock() already excludes archived products ----
         products = InventoryController.list_low_stock()
 
-        if not self.show_archived:
-            products = [p for p in products if p["is_archived"] == 0]
+        # ---- Apply search filter only ----
         if self.search_query:
             products = [p for p in products if self._matches_search(p)]
 
+        self.current_page = 1     # ---- reset on "Low Stock Only" ----
         self._render(products)
 
     def _matches_search(self, p):
@@ -271,7 +362,18 @@ class InventoryView(ctk.CTkFrame):
         for w in self.list_frame.winfo_children():
             w.destroy()
 
-        self.count_label.configure(text=f"{len(products)} product(s)")
+        # ---- Total count ----
+        total = len(products)
+        self.count_label.configure(text=f"{total} product(s)")
+
+        # ---- Pagination math ----
+        self.total_pages = max(1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        if self.current_page > self.total_pages:
+            self.current_page = self.total_pages
+
+        start = (self.current_page - 1) * self.PAGE_SIZE
+        end = start + self.PAGE_SIZE
+        page_products = products[start:end]
 
         # ---- Header ----
         header = ctk.CTkFrame(self.list_frame, fg_color="transparent")
@@ -295,20 +397,23 @@ class InventoryView(ctk.CTkFrame):
                          text_color=FG_SECONDARY).pack(side="left", padx=3)
 
         # ---- Empty state ----
-        if not products:
+        if not page_products:
             msg = "No products match your search." if self.search_query \
                   else "No products to show."
             ctk.CTkLabel(self.list_frame, text=msg,
                          font=font(12),
                          text_color=FG_MUTED).pack(pady=30)
+            self._update_pager()
             return
 
         # ---- Rows ----
-        for i, p in enumerate(products):
+        for i, p in enumerate(page_products):
             self._render_row(p, i)
 
+        # ---- Update pager ----
+        self._update_pager()
+
     def _render_row(self, p, index=0):
-        # ---- Zebra striping ----
         bg = BG_ROW_ALT if index % 2 else BG_CARD
 
         row = ctk.CTkFrame(self.list_frame, fg_color=bg, corner_radius=6)
@@ -353,13 +458,26 @@ class InventoryView(ctk.CTkFrame):
                      font=font(11),
                      text_color=FG_PRIMARY).pack(side="left", padx=3)
 
-        # ---- Stock ----
-        ctk.CTkLabel(row, text=str(p["stock_qty"]),
-                     width=55, anchor="w",
-                     font=font(11),
-                     text_color=FG_PRIMARY).pack(side="left", padx=3)
+        # ---- Stock (color-coded for low stock) ----
+        stock_qty = p["stock_qty"]
+        low_level = p["low_stock_level"] or 0
 
-        # ---- Status (colored badge) ----
+        if stock_qty <= 0:
+            # ---- Out of stock ----
+            stock_color = DANGER          # ---- red ----
+        elif stock_qty <= low_level:
+            # ---- Low stock ----
+            stock_color = "#D97706"       # ---- amber / orange ----
+        else:
+            # ---- Healthy stock ----
+            stock_color = FG_PRIMARY      # ---- normal text color ----
+
+        ctk.CTkLabel(row, text=str(stock_qty),
+                     width=55, anchor="w",
+                     font=font_bold(11),
+                     text_color=stock_color).pack(side="left", padx=3)
+
+        # ---- Status ----
         if p["stock_qty"] > 0:
             status_text = "Available"
             status_color = SUCCESS
@@ -381,7 +499,10 @@ class InventoryView(ctk.CTkFrame):
                      font=font(11),
                      text_color=FG_SECONDARY).pack(side="left", padx=3)
 
-        # ---- Actions ----
+        # ---- Actions (admin only) ----
+        if not AuthController.is_admin():
+            return
+
         actions = ctk.CTkFrame(row, fg_color="transparent")
         actions.pack(side="right", padx=4)
 
@@ -513,7 +634,6 @@ class ProductDialog(ctk.CTkToplevel):
         self.suppliers = SupplierController.list_suppliers()
         self.categories = InventoryController.list_categories()
 
-        # ---- Picture state ----
         self.new_image_source = None
         self.current_image_path = (product["image_path"] if product else None)
         self.preview_image = None
@@ -528,24 +648,20 @@ class ProductDialog(ctk.CTkToplevel):
     def _build(self):
         p = self.product
 
-        # ---- Title bar ----
         ctk.CTkLabel(self,
                      text="Edit Product" if p else "New Product",
                      font=font_bold(16),
                      text_color=FG_PRIMARY).pack(pady=(16, 4))
 
-        # ---- Card ----
         card = ctk.CTkFrame(self, fg_color=BG_CARD,
                             corner_radius=12,
                             border_width=1,
                             border_color=BORDER)
         card.pack(fill="both", expand=True, padx=16, pady=(8, 16))
 
-        # ---- Top row: image (left) + code/name/price (right) ----
         top = ctk.CTkFrame(card, fg_color="transparent")
         top.pack(fill="x", padx=14, pady=(14, 6))
 
-        # ---- Left: image preview + picker buttons ----
         left = ctk.CTkFrame(top, fg_color="transparent")
         left.pack(side="left", padx=(0, 12))
 
@@ -574,11 +690,9 @@ class ProductDialog(ctk.CTkToplevel):
                       text_color=NEUTRAL_TEXT,
                       command=self._clear_image).pack(side="left", padx=2)
 
-        # ---- Right: code + name + price ----
         right = ctk.CTkFrame(top, fg_color="transparent")
         right.pack(side="left", fill="both", expand=True)
 
-        # ---- Product code (read-only when editing) ----
         if p:
             ctk.CTkLabel(right, text="CODE", anchor="w",
                          font=font_bold(10),
@@ -593,7 +707,6 @@ class ProductDialog(ctk.CTkToplevel):
             code_e.configure(state="disabled")
             code_e.pack(fill="x", pady=(0, 8))
 
-        # ---- Name ----
         ctk.CTkLabel(right, text="NAME", anchor="w",
                      font=font_bold(10),
                      text_color=FG_SECONDARY).pack(fill="x", pady=(0, 4))
@@ -606,7 +719,6 @@ class ProductDialog(ctk.CTkToplevel):
         self.name_e.pack(fill="x", pady=(0, 8))
         if p: self.name_e.insert(0, p["name"])
 
-        # ---- Price ----
         ctk.CTkLabel(right, text="PRICE", anchor="w",
                      font=font_bold(10),
                      text_color=FG_SECONDARY).pack(fill="x", pady=(0, 4))
@@ -619,7 +731,6 @@ class ProductDialog(ctk.CTkToplevel):
         self.price_e.pack(fill="x")
         if p: self.price_e.insert(0, str(p["price"]))
 
-        # ---- Row 2: stock + low stock (side by side) ----
         grid = ctk.CTkFrame(card, fg_color="transparent")
         grid.pack(fill="x", padx=14, pady=(8, 4))
 
@@ -655,7 +766,6 @@ class ProductDialog(ctk.CTkToplevel):
         if p: self.low_e.insert(0, str(p["low_stock_level"]))
         else: self.low_e.insert(0, "10")
 
-        # ---- Category ----
         cat_row = ctk.CTkFrame(card, fg_color="transparent")
         cat_row.pack(fill="x", padx=14, pady=(8, 4))
 
@@ -684,7 +794,6 @@ class ProductDialog(ctk.CTkToplevel):
                       fg_color=BRAND_GREEN, hover_color="#1E9040",
                       command=self._quick_add_category).pack(side="left")
 
-        # ---- Supplier ----
         sup_row = ctk.CTkFrame(card, fg_color="transparent")
         sup_row.pack(fill="x", padx=14, pady=(4, 4))
 
@@ -705,7 +814,6 @@ class ProductDialog(ctk.CTkToplevel):
                           button_hover_color=NEUTRAL,
                           text_color=FG_PRIMARY).pack(side="left")
 
-        # ---- Save ----
         ctk.CTkButton(card, text="Save Product",
                       width=220, height=40,
                       corner_radius=8,
@@ -870,7 +978,6 @@ class RestockDialog(ctk.CTkToplevel):
                      font=font(12),
                      text_color=FG_SECONDARY).pack(pady=2)
 
-        # ---- Info card ----
         info = ctk.CTkFrame(self, fg_color=BG_CARD,
                             corner_radius=10,
                             border_width=1,
@@ -884,7 +991,6 @@ class RestockDialog(ctk.CTkToplevel):
                      font=font_bold(24),
                      text_color=ACCENT).pack(pady=(0, 12))
 
-        # ---- Quantity input ----
         ctk.CTkLabel(self, text="QUANTITY TO ADD",
                      font=font_bold(10),
                      text_color=FG_SECONDARY).pack(pady=(8, 4))
@@ -951,14 +1057,12 @@ class CategoryDialog(ctk.CTkToplevel):
                      font=font_bold(16),
                      text_color=FG_PRIMARY).pack(pady=(16, 4))
 
-        # ---- Card ----
         card = ctk.CTkFrame(self, fg_color=BG_CARD,
                             corner_radius=12,
                             border_width=1,
                             border_color=BORDER)
         card.pack(fill="both", expand=True, padx=16, pady=(8, 16))
 
-        # ---- Add row ----
         add_row = ctk.CTkFrame(card, fg_color="transparent")
         add_row.pack(fill="x", padx=14, pady=(14, 4))
 
@@ -977,7 +1081,6 @@ class CategoryDialog(ctk.CTkToplevel):
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
                       command=self._add).pack(side="left")
 
-        # ---- Description ----
         self.desc_e = ctk.CTkEntry(card, height=36,
                                    placeholder_text="Description (optional)",
                                    corner_radius=8,
@@ -987,7 +1090,6 @@ class CategoryDialog(ctk.CTkToplevel):
                                    border_width=1)
         self.desc_e.pack(fill="x", padx=14, pady=(0, 10))
 
-        # ---- List ----
         self.list_frame = ctk.CTkScrollableFrame(card, fg_color="transparent")
         self.list_frame.pack(fill="both", expand=True, padx=14, pady=(4, 14))
 

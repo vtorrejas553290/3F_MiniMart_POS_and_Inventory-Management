@@ -24,6 +24,9 @@ from config import (
 
 class UserManagementView(ctk.CTkFrame):
 
+    # ---- Pagination size ----
+    PAGE_SIZE = 10
+
     # ─────────────────────────────────────────────
     # SETUP
     # ─────────────────────────────────────────────
@@ -31,6 +34,11 @@ class UserManagementView(ctk.CTkFrame):
     def __init__(self, parent, user):
         super().__init__(parent, fg_color=BG_MAIN)
         self.user = user
+
+        # ---- Pagination state ----
+        self.current_page = 1
+        self.total_pages = 1
+
         self._build()
         self._load()
 
@@ -79,6 +87,83 @@ class UserManagementView(ctk.CTkFrame):
         self.list_frame = ctk.CTkScrollableFrame(list_card, fg_color="transparent")
         self.list_frame.pack(fill="both", expand=True, padx=8, pady=8)
 
+        # ═════════════════════════════════════════
+        # PAGINATION CONTROLS
+        # ═════════════════════════════════════════
+
+        pager = ctk.CTkFrame(list_card, fg_color="transparent")
+        pager.pack(fill="x", padx=12, pady=(0, 12))
+
+        self.prev_btn = ctk.CTkButton(
+            pager, text="‹ Prev",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(-1),
+        )
+        self.prev_btn.pack(side="left")
+
+        self.page_label = ctk.CTkLabel(
+            pager, text="Page 1 of 1",
+            font=font_bold(11),
+            text_color=FG_SECONDARY,
+        )
+        self.page_label.pack(side="left", fill="x", expand=True)
+
+        self.next_btn = ctk.CTkButton(
+            pager, text="Next ›",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(+1),
+        )
+        self.next_btn.pack(side="right")
+
+    # ─────────────────────────────────────────────
+    # PAGINATION
+    # ─────────────────────────────────────────────
+
+    def _change_page(self, delta):
+        new_page = self.current_page + delta
+        if 1 <= new_page <= self.total_pages:
+            self.current_page = new_page
+            self._load()
+
+    def _update_pager(self):
+        self.page_label.configure(
+            text=f"Page {self.current_page} of {self.total_pages}"
+        )
+
+        if self.current_page <= 1:
+            self.prev_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.prev_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
+        if self.current_page >= self.total_pages:
+            self.next_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.next_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
     # ─────────────────────────────────────────────
     # LOAD
     # ─────────────────────────────────────────────
@@ -94,6 +179,16 @@ class UserManagementView(ctk.CTkFrame):
     def _render(self, users):
         for w in self.list_frame.winfo_children():
             w.destroy()
+
+        # ---- Pagination math ----
+        total = len(users)
+        self.total_pages = max(1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        if self.current_page > self.total_pages:
+            self.current_page = self.total_pages
+
+        start = (self.current_page - 1) * self.PAGE_SIZE
+        end = start + self.PAGE_SIZE
+        page_users = users[start:end]
 
         # ---- Header ----
         header = ctk.CTkFrame(self.list_frame, fg_color="transparent")
@@ -113,16 +208,20 @@ class UserManagementView(ctk.CTkFrame):
                          text_color=FG_SECONDARY).pack(side="left", padx=4)
 
         # ---- Empty state ----
-        if not users:
+        if not page_users:
             ctk.CTkLabel(self.list_frame,
                          text="No users yet.",
                          font=font(12),
                          text_color=FG_MUTED).pack(pady=30)
+            self._update_pager()
             return
 
         # ---- Rows ----
-        for i, u in enumerate(users):
+        for i, u in enumerate(page_users):
             self._render_row(u, i)
+
+        # ---- Update pager ----
+        self._update_pager()
 
     def _render_row(self, u, index):
         bg = BG_ROW_ALT if index % 2 else BG_CARD
@@ -136,7 +235,7 @@ class UserManagementView(ctk.CTkFrame):
                      font=font_bold(12),
                      text_color=FG_PRIMARY).pack(side="left", padx=4, pady=8)
 
-        # ---- Full name ----
+        # ---- Full name (computed from first / middle / last) ----
         ctk.CTkLabel(row, text=u["full_name"],
                      width=200, anchor="w",
                      font=font(11),
@@ -169,10 +268,9 @@ class UserManagementView(ctk.CTkFrame):
         actions = ctk.CTkFrame(row, fg_color="transparent")
         actions.pack(side="right", padx=4)
 
-        is_self  = (u["user_id"] == self.user["user_id"])
         is_admin = (u["role"] == "admin")
 
-        # ---- Admin accounts cannot be edited here (view-only) ----
+        # ---- Admin accounts: view-only ----
         if is_admin:
             ctk.CTkLabel(actions, text="(owner)",
                          width=80,
@@ -234,7 +332,6 @@ class UserManagementView(ctk.CTkFrame):
         UserDialog(self.winfo_toplevel(), self.user, user,
                    on_save=self._load)
 
-
 # ─────────────────────────────────────────────
 # USER DIALOG (add / edit staff)
 # ─────────────────────────────────────────────
@@ -253,7 +350,7 @@ class UserDialog(ctk.CTkToplevel):
         self.on_save = on_save
 
         self.title("Edit Staff" if user else "Add Staff")
-        self.geometry("500x620")
+        self.geometry("480x620")            # ---- was 500x760 ----
         self.resizable(False, False)
         self.configure(fg_color=BG_MAIN)
 
@@ -272,68 +369,101 @@ class UserDialog(ctk.CTkToplevel):
         u = self.user
         is_edit = u is not None
 
-        # ---- Title ----
         ctk.CTkLabel(self,
                      text="Edit Staff Account" if is_edit else "Add Staff Account",
                      font=font_bold(16),
-                     text_color=FG_PRIMARY).pack(pady=(16, 4))
+                     text_color=FG_PRIMARY).pack(pady=(12, 2))
 
         ctk.CTkLabel(self,
                      text="Update account details" if is_edit
                           else "Create a login for a staff member",
                      font=font(11),
-                     text_color=FG_SECONDARY).pack(pady=(0, 12))
+                     text_color=FG_SECONDARY).pack(pady=(0, 8))
 
-        # ---- Card ----
-        card = ctk.CTkFrame(self, fg_color=BG_CARD,
-                            corner_radius=12,
-                            border_width=1,
-                            border_color=BORDER)
-        card.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        # ---- Scrollable card (so content never overflows) ----
+        card = ctk.CTkScrollableFrame(self, fg_color=BG_CARD,
+                                      corner_radius=12,
+                                      border_width=1,
+                                      border_color=BORDER)
+        card.pack(fill="both", expand=True, padx=16, pady=(0, 12))
 
         # ─────────────────────────────────────
         # USERNAME
         # ─────────────────────────────────────
         ctk.CTkLabel(card, text="USERNAME", anchor="w",
                      font=font_bold(10),
-                     text_color=FG_SECONDARY).pack(fill="x", padx=20, pady=(18, 4))
+                     text_color=FG_SECONDARY).pack(fill="x", padx=18, pady=(14, 4))
 
-        self.username_e = ctk.CTkEntry(card, height=36,
+        self.username_e = ctk.CTkEntry(card, height=34,
                                        corner_radius=8,
                                        font=font(12),
                                        fg_color=BG_INPUT,
                                        border_color=BORDER,
                                        border_width=1)
-        self.username_e.pack(fill="x", padx=20)
+        self.username_e.pack(fill="x", padx=18)
         if is_edit:
             self.username_e.insert(0, u["username"])
             self.username_e.configure(state="disabled")
 
         # ─────────────────────────────────────
-        # FULL NAME
+        # FIRST NAME
         # ─────────────────────────────────────
-        ctk.CTkLabel(card, text="FULL NAME", anchor="w",
+        ctk.CTkLabel(card, text="FIRST NAME", anchor="w",
                      font=font_bold(10),
-                     text_color=FG_SECONDARY).pack(fill="x", padx=20, pady=(12, 4))
+                     text_color=FG_SECONDARY).pack(fill="x", padx=18, pady=(10, 4))
 
-        self.fullname_e = ctk.CTkEntry(card, height=36,
-                                       corner_radius=8,
-                                       font=font(12),
-                                       fg_color=BG_INPUT,
-                                       border_color=BORDER,
-                                       border_width=1)
-        self.fullname_e.pack(fill="x", padx=20)
+        self.first_e = ctk.CTkEntry(card, height=34,
+                                    corner_radius=8,
+                                    font=font(12),
+                                    fg_color=BG_INPUT,
+                                    border_color=BORDER,
+                                    border_width=1)
+        self.first_e.pack(fill="x", padx=18)
         if is_edit:
-            self.fullname_e.insert(0, u["full_name"])
+            self.first_e.insert(0, u.get("first_name") or "")
+
+        # ─────────────────────────────────────
+        # MIDDLE NAME (optional)
+        # ─────────────────────────────────────
+        ctk.CTkLabel(card, text="MIDDLE NAME (optional)", anchor="w",
+                     font=font_bold(10),
+                     text_color=FG_SECONDARY).pack(fill="x", padx=18, pady=(10, 4))
+
+        self.middle_e = ctk.CTkEntry(card, height=34,
+                                     corner_radius=8,
+                                     font=font(12),
+                                     fg_color=BG_INPUT,
+                                     border_color=BORDER,
+                                     border_width=1)
+        self.middle_e.pack(fill="x", padx=18)
+        if is_edit:
+            self.middle_e.insert(0, u.get("middle_name") or "")
+
+        # ─────────────────────────────────────
+        # LAST NAME
+        # ─────────────────────────────────────
+        ctk.CTkLabel(card, text="LAST NAME", anchor="w",
+                     font=font_bold(10),
+                     text_color=FG_SECONDARY).pack(fill="x", padx=18, pady=(10, 4))
+
+        self.last_e = ctk.CTkEntry(card, height=34,
+                                   corner_radius=8,
+                                   font=font(12),
+                                   fg_color=BG_INPUT,
+                                   border_color=BORDER,
+                                   border_width=1)
+        self.last_e.pack(fill="x", padx=18)
+        if is_edit:
+            self.last_e.insert(0, u.get("last_name") or "")
 
         # ─────────────────────────────────────
         # ROLE (locked to Staff)
         # ─────────────────────────────────────
         ctk.CTkLabel(card, text="ROLE", anchor="w",
                      font=font_bold(10),
-                     text_color=FG_SECONDARY).pack(fill="x", padx=20, pady=(12, 4))
+                     text_color=FG_SECONDARY).pack(fill="x", padx=18, pady=(10, 4))
 
-        role_display = ctk.CTkEntry(card, height=36,
+        role_display = ctk.CTkEntry(card, height=34,
                                     corner_radius=8,
                                     font=font(12),
                                     fg_color=BG_INPUT,
@@ -341,7 +471,7 @@ class UserDialog(ctk.CTkToplevel):
                                     border_width=1)
         role_display.insert(0, "Staff")
         role_display.configure(state="disabled")
-        role_display.pack(fill="x", padx=20)
+        role_display.pack(fill="x", padx=18)
 
         # ─────────────────────────────────────
         # PASSWORD
@@ -351,13 +481,13 @@ class UserDialog(ctk.CTkToplevel):
                           else "NEW PASSWORD (leave blank to keep)",
                      anchor="w",
                      font=font_bold(10),
-                     text_color=FG_SECONDARY).pack(fill="x", padx=20, pady=(12, 4))
+                     text_color=FG_SECONDARY).pack(fill="x", padx=18, pady=(10, 4))
 
-        pw_row = ctk.CTkFrame(card, height=36, fg_color="transparent")
-        pw_row.pack(fill="x", padx=20)
+        pw_row = ctk.CTkFrame(card, height=34, fg_color="transparent")
+        pw_row.pack(fill="x", padx=18)
         pw_row.pack_propagate(False)
 
-        self.password_e = ctk.CTkEntry(pw_row, height=36,
+        self.password_e = ctk.CTkEntry(pw_row, height=34,
                                        corner_radius=8,
                                        font=font(12),
                                        fg_color=BG_INPUT,
@@ -384,13 +514,13 @@ class UserDialog(ctk.CTkToplevel):
         if not is_edit:
             ctk.CTkLabel(card, text="CONFIRM PASSWORD", anchor="w",
                          font=font_bold(10),
-                         text_color=FG_SECONDARY).pack(fill="x", padx=20, pady=(12, 4))
+                         text_color=FG_SECONDARY).pack(fill="x", padx=18, pady=(10, 4))
 
-            cpw_row = ctk.CTkFrame(card, height=36, fg_color="transparent")
-            cpw_row.pack(fill="x", padx=20)
+            cpw_row = ctk.CTkFrame(card, height=34, fg_color="transparent")
+            cpw_row.pack(fill="x", padx=18)
             cpw_row.pack_propagate(False)
 
-            self.confirm_e = ctk.CTkEntry(cpw_row, height=36,
+            self.confirm_e = ctk.CTkEntry(cpw_row, height=34,
                                           corner_radius=8,
                                           font=font(12),
                                           fg_color=BG_INPUT,
@@ -419,11 +549,11 @@ class UserDialog(ctk.CTkToplevel):
         # ─────────────────────────────────────
         ctk.CTkButton(card,
                       text="Save" if not is_edit else "Save Changes",
-                      width=200, height=40,
+                      width=200, height=38,
                       corner_radius=8,
                       font=font_bold(13),
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
-                      command=self._save).pack(pady=(22, 18))
+                      command=self._save).pack(pady=(14, 14))
 
     # ─────────────────────────────────────────────
     # PASSWORD TOGGLES
@@ -455,7 +585,9 @@ class UserDialog(ctk.CTkToplevel):
 
     def _save(self):
         username = self.username_e.get().strip().lower()
-        full_name = self.fullname_e.get().strip()
+        first_name = self.first_e.get().strip()
+        middle_name = self.middle_e.get().strip()
+        last_name = self.last_e.get().strip()
         password = self.password_e.get().strip()
 
         # ═════════════════════════════════════════
@@ -465,12 +597,12 @@ class UserDialog(ctk.CTkToplevel):
             confirm = self.confirm_e.get().strip() if self.confirm_e else ""
 
             if password != confirm:
-                messagebox.showerror("Error",
-                                     "Passwords do not match.")
+                messagebox.showerror("Error", "Passwords do not match.")
                 return
 
             ok, msg = UserController.add_user(
-                self.admin_user, username, password, full_name
+                self.admin_user, username, password,
+                first_name, middle_name, last_name,
             )
             if ok:
                 messagebox.showinfo("Staff Created",
@@ -488,7 +620,7 @@ class UserDialog(ctk.CTkToplevel):
         ok, msg = UserController.edit_user(
             self.admin_user,
             self.user["user_id"],
-            full_name,
+            first_name, middle_name, last_name,
             new_password,
         )
         if ok:

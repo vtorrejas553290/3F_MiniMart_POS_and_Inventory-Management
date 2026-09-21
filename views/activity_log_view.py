@@ -21,6 +21,9 @@ from config import (
 
 class ActivityLogView(ctk.CTkFrame):
 
+    # ---- Pagination size ----
+    PAGE_SIZE = 15
+
     # ─────────────────────────────────────────────
     # BUTTON COLORS
     # ─────────────────────────────────────────────
@@ -44,6 +47,10 @@ class ActivityLogView(ctk.CTkFrame):
         # ---- Active quick-range button ----
         self.active_range_button = None
         self._programmatic_set = False
+
+        # ---- Pagination state ----
+        self.current_page = 1
+        self.total_pages = 1
 
         self._build()
         self._refresh_logs()
@@ -236,12 +243,90 @@ class ActivityLogView(ctk.CTkFrame):
         )
         self.list_frame.pack(fill="both", expand=True, padx=8, pady=8)
 
+        # ═════════════════════════════════════════
+        # PAGINATION CONTROLS
+        # ═════════════════════════════════════════
+
+        pager = ctk.CTkFrame(list_card, fg_color="transparent")
+        pager.pack(fill="x", padx=12, pady=(0, 12))
+
+        self.prev_btn = ctk.CTkButton(
+            pager, text="‹ Prev",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(-1),
+        )
+        self.prev_btn.pack(side="left")
+
+        self.page_label = ctk.CTkLabel(
+            pager, text="Page 1 of 1",
+            font=font_bold(11),
+            text_color=FG_SECONDARY,
+        )
+        self.page_label.pack(side="left", fill="x", expand=True)
+
+        self.next_btn = ctk.CTkButton(
+            pager, text="Next ›",
+            width=90, height=32,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=lambda: self._change_page(+1),
+        )
+        self.next_btn.pack(side="right")
+
+    # ─────────────────────────────────────────────
+    # PAGINATION
+    # ─────────────────────────────────────────────
+
+    def _change_page(self, delta):
+        new_page = self.current_page + delta
+        if 1 <= new_page <= self.total_pages:
+            self.current_page = new_page
+            self._refresh_logs()
+
+    def _update_pager(self):
+        self.page_label.configure(
+            text=f"Page {self.current_page} of {self.total_pages}"
+        )
+
+        if self.current_page <= 1:
+            self.prev_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.prev_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
+        if self.current_page >= self.total_pages:
+            self.next_btn.configure(
+                state="disabled",
+                fg_color=BG_INPUT,
+                text_color=FG_MUTED,
+            )
+        else:
+            self.next_btn.configure(
+                state="normal",
+                fg_color=NEUTRAL,
+                text_color=NEUTRAL_TEXT,
+            )
+
     # ─────────────────────────────────────────────
     # FILTERS — SEARCH
     # ─────────────────────────────────────────────
 
     def _on_search_change(self, *args):
         self.search_query = self.search_var.get().strip().lower()
+        self.current_page = 1
         self._refresh_logs()
 
     def _clear_search(self):
@@ -252,13 +337,11 @@ class ActivityLogView(ctk.CTkFrame):
     # ─────────────────────────────────────────────
 
     def _highlight_button(self, button):
-        # ---- Reset previous ----
         if self.active_range_button is not None:
             self.active_range_button.configure(
                 fg_color=NEUTRAL,
                 text_color=NEUTRAL_TEXT,
             )
-        # ---- Highlight new ----
         if button is not None:
             button.configure(
                 fg_color=BRAND_GREEN,
@@ -299,6 +382,7 @@ class ActivityLogView(ctk.CTkFrame):
         self._clear_button_highlight()
         self.date_from = d_from
         self.date_to = d_to
+        self.current_page = 1
         self._refresh_logs()
 
     def _is_valid_date(self, text):
@@ -343,6 +427,7 @@ class ActivityLogView(ctk.CTkFrame):
 
         self.date_from = d_from
         self.date_to = d_to
+        self.current_page = 1
         self._highlight_button(button)
         self._refresh_logs()
 
@@ -366,7 +451,18 @@ class ActivityLogView(ctk.CTkFrame):
         for w in self.list_frame.winfo_children():
             w.destroy()
 
-        self.count_label.configure(text=f"{len(logs)} log(s)")
+        # ---- Total count ----
+        total = len(logs)
+        self.count_label.configure(text=f"{total} log(s)")
+
+        # ---- Pagination math ----
+        self.total_pages = max(1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        if self.current_page > self.total_pages:
+            self.current_page = self.total_pages
+
+        start = (self.current_page - 1) * self.PAGE_SIZE
+        end = start + self.PAGE_SIZE
+        page_logs = logs[start:end]
 
         # ---- Header row ----
         header = ctk.CTkFrame(self.list_frame, fg_color="transparent")
@@ -385,15 +481,16 @@ class ActivityLogView(ctk.CTkFrame):
                          text_color=FG_SECONDARY).pack(side="left", padx=6)
 
         # ---- Empty state ----
-        if not logs:
+        if not page_logs:
             ctk.CTkLabel(self.list_frame,
                          text="No logs match your filters.",
                          font=font(12),
                          text_color=FG_MUTED).pack(pady=30)
+            self._update_pager()
             return
 
-        # ---- Log rows (with zebra striping) ----
-        for i, log in enumerate(logs):
+        # ---- Log rows ----
+        for i, log in enumerate(page_logs):
             bg = BG_ROW_ALT if i % 2 else BG_CARD
 
             row = ctk.CTkFrame(self.list_frame, fg_color=bg,
@@ -412,7 +509,7 @@ class ActivityLogView(ctk.CTkFrame):
                          font=font(11),
                          text_color=FG_PRIMARY).pack(side="left", padx=6)
 
-            # ---- Action (color-coded) ----
+            # ---- Action ----
             action = log["action"] or ""
             action_color = self._action_color(action)
             ctk.CTkLabel(row, text=action,
@@ -425,6 +522,9 @@ class ActivityLogView(ctk.CTkFrame):
                          width=420, anchor="w",
                          font=font(11),
                          text_color=FG_SECONDARY).pack(side="left", padx=6)
+
+        # ---- Update pager ----
+        self._update_pager()
 
     # ─────────────────────────────────────────────
     # ACTION COLOR MAP

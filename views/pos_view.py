@@ -52,7 +52,7 @@ class POSView(ctk.CTkFrame):
         title_box = ctk.CTkFrame(header_frame, fg_color="transparent")
         title_box.pack(side="left")
 
-        ctk.CTkLabel(title_box, text="POS / Sales",
+        ctk.CTkLabel(title_box, text="POS",
                      font=font_bold(22),
                      text_color=FG_PRIMARY,
                      anchor="w").pack(fill="x")
@@ -175,7 +175,7 @@ class POSView(ctk.CTkFrame):
 
         # ---- Cart list ----
         self.cart_frame = ctk.CTkScrollableFrame(right, fg_color="transparent",
-                                                 height=280)
+                                                 height=200)
         self.cart_frame.pack(fill="both", expand=True, padx=10, pady=(0, 6))
 
         # ---- Divider ----
@@ -213,13 +213,30 @@ class POSView(ctk.CTkFrame):
             button_hover_color=NEUTRAL,
             text_color=FG_PRIMARY,
         )
-        self.payment_menu.pack(fill="x", padx=16, pady=(0, 10))
+        self.payment_menu.pack(fill="x", padx=16, pady=(0, 8))
+
+        # ---- GCash reference (created here, packed later when GCash picked) ----
+        self.ref_label = ctk.CTkLabel(right, text="GCASH REFERENCE NO.",
+                                      font=font_bold(10),
+                                      text_color=FG_SECONDARY,
+                                      anchor="w")
+        self.ref_entry = ctk.CTkEntry(
+            right,
+            height=38,
+            corner_radius=8,
+            font=font(13),
+            fg_color=BG_INPUT,
+            border_color=BORDER,
+            border_width=1,
+            placeholder_text="e.g. 1234567890123",
+        )
 
         # ---- Amount paid ----
-        ctk.CTkLabel(right, text="AMOUNT PAID",
-                     font=font_bold(10),
-                     text_color=FG_SECONDARY,
-                     anchor="w").pack(fill="x", padx=16, pady=(0, 4))
+        self.amount_label = ctk.CTkLabel(right, text="AMOUNT PAID",
+                                         font=font_bold(10),
+                                         text_color=FG_SECONDARY,
+                                         anchor="w")
+        self.amount_label.pack(fill="x", padx=16, pady=(0, 4))
 
         self.amount_entry = ctk.CTkEntry(
             right,
@@ -232,6 +249,9 @@ class POSView(ctk.CTkFrame):
             placeholder_text="0.00",
         )
         self.amount_entry.pack(fill="x", padx=16, pady=(0, 12))
+
+        # ---- Attach the toggle AFTER widgets are created ----
+        self.payment_var.trace_add("write", self._on_payment_method_change)
 
         # ---- Buttons ----
         ctk.CTkButton(
@@ -250,6 +270,25 @@ class POSView(ctk.CTkFrame):
             text_color=NEUTRAL_TEXT,
             command=self._clear,
         ).pack(fill="x", padx=16, pady=(0, 14))
+
+    # ─────────────────────────────────────────────
+    # PAYMENT METHOD CHANGE (show/hide GCash reference)
+    # ─────────────────────────────────────────────
+
+    def _on_payment_method_change(self, *args):
+        """Show or hide the GCash reference field based on payment method."""
+        method = self.payment_var.get()
+
+        if method == "GCash":
+            # ---- Insert ABOVE the Amount Paid label ----
+            self.ref_label.pack(fill="x", padx=16, pady=(0, 4),
+                                before=self.amount_label)
+            self.ref_entry.pack(fill="x", padx=16, pady=(0, 12),
+                                before=self.amount_label)
+        else:
+            self.ref_label.pack_forget()
+            self.ref_entry.pack_forget()
+            self.ref_entry.delete(0, "end")
 
     # ─────────────────────────────────────────────
     # SEARCH
@@ -492,7 +531,6 @@ class POSView(ctk.CTkFrame):
         self.controller.remove_from_cart(product_id)
         self._refresh_cart()
 
-    # ---- NEW: decrease quantity by 1 ----
     def _decrease(self, product_id):
         """Reduce the quantity of a cart item by 1 (removes it if it hits 0)."""
         self.controller.decrease_quantity(product_id)
@@ -566,9 +604,20 @@ class POSView(ctk.CTkFrame):
             return
 
         method = self.payment_var.get()
+        gcash_reference = None
 
         if method == "GCash":
             paid = self.controller.get_total()
+
+            # ---- Require the GCash reference number ----
+            gcash_reference = self.ref_entry.get().strip()
+            if not gcash_reference:
+                messagebox.showerror(
+                    "Missing Reference",
+                    "Please enter the GCash reference number."
+                )
+                self.ref_entry.focus_set()
+                return
         else:
             try:
                 paid = float(self.amount_entry.get() or 0)
@@ -593,12 +642,15 @@ class POSView(ctk.CTkFrame):
             amount_paid=paid,
             payment_method=method,
             change=change,
+            gcash_reference=gcash_reference,
         )
 
         if not confirm.confirmed:
             return
 
-        ok, result, change = self.controller.checkout(self.user, method, paid)
+        ok, result, change = self.controller.checkout(
+            self.user, method, paid, gcash_reference
+        )
         if not ok:
             messagebox.showerror("Checkout Failed", str(result))
             return
@@ -611,6 +663,7 @@ class POSView(ctk.CTkFrame):
             f"Change: ₱{change:.2f}"
         )
         self.amount_entry.delete(0, "end")
+        self.ref_entry.delete(0, "end")
 
         self.products = InventoryController.list_by_category(self.selected_category_id)
         self._render_products()
@@ -623,13 +676,15 @@ class POSView(ctk.CTkFrame):
 
 class CheckoutConfirmDialog(ctk.CTkToplevel):
 
-    def __init__(self, parent, total, amount_paid, payment_method, change):
+    def __init__(self, parent, total, amount_paid, payment_method, change,
+                 gcash_reference=None):
         super().__init__(parent)
         self.parent = parent
         self.total = total
         self.amount_paid = amount_paid
         self.payment_method = payment_method
         self.change = change
+        self.gcash_reference = gcash_reference
 
         self.confirmed = False
 
@@ -663,6 +718,10 @@ class CheckoutConfirmDialog(ctk.CTkToplevel):
         rows = [
             ("Total",           f"₱{self.total:.2f}",        ACCENT),
             ("Payment Method",  self.payment_method,         FG_PRIMARY),
+        ]
+        if self.payment_method == "GCash" and self.gcash_reference:
+            rows.append(("GCash Reference", self.gcash_reference, FG_PRIMARY))
+        rows += [
             ("Amount Paid",     f"₱{self.amount_paid:.2f}", FG_PRIMARY),
             ("Change",          f"₱{self.change:.2f}",       BRAND_GREEN),
         ]

@@ -10,7 +10,8 @@ from models.product_model import deduct_stock_cur
 # WRITE
 # ─────────────────────────────────────────────
 
-def create_transaction(user_id, cart, payment_method, amount_paid):
+def create_transaction(user_id, cart, payment_method, amount_paid,
+                       gcash_reference=None):
     """
     cart = list of dicts: {product_id, name, price, quantity}
     Returns (success, transaction_id_or_error, change)
@@ -29,9 +30,11 @@ def create_transaction(user_id, cart, payment_method, amount_paid):
         # ---- Insert transaction header ----
         cur.execute("""
             INSERT INTO transactions
-                (user_id, total, payment_method, amount_paid, change_due, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (user_id, total, payment_method, amount_paid, change, now_local()))
+                (user_id, total, payment_method, amount_paid,
+                 change_due, gcash_reference, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, total, payment_method, amount_paid,
+              change, gcash_reference, now_local()))
         txn_id = cur.lastrowid
 
         # ---- Insert each item + deduct stock (same connection) ----
