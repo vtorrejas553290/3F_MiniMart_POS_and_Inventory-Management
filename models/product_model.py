@@ -117,27 +117,30 @@ def get_products_by_supplier(supplier_id):
 # ─────────────────────────────────────────────
 
 def add_product(name, price, stock_qty, low_stock_level,
-                supplier_id, category_id, image_path=None):
+                supplier_id, category_id, image_path=None,
+                brand=None, size=None, unit="pc", cost_price=0.0,
+                expiration_date=None):
     conn = get_connection()
     try:
         cur = conn.cursor()
         code = _generate_product_code(cur)
+        now = now_local()
 
-        # ---- Insert product (no stock_qty here) ----
         cur.execute("""
             INSERT INTO products
-                (product_code, name, price, low_stock_level,
-                 supplier_id, category_id, image_path, is_archived, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
-        """, (code, name, price, low_stock_level,
-              supplier_id, category_id, image_path, now_local()))
+                (product_code, name, brand, size, unit, cost_price, price,
+                 low_stock_level, expiration_date, supplier_id, category_id,
+                 image_path, is_archived, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        """, (code, name, brand, size, unit, cost_price, price,
+              low_stock_level, expiration_date, supplier_id, category_id,
+              image_path, now, now))
         product_id = cur.lastrowid
 
-        # ---- Insert inventory row for this product ----
         cur.execute("""
             INSERT INTO inventory (product_id, stock_qty, updated_at)
             VALUES (?, ?, ?)
-        """, (product_id, stock_qty, now_local()))
+        """, (product_id, stock_qty, now))
 
         conn.commit()
         return True, f"Product added ({code})."
@@ -148,17 +151,23 @@ def add_product(name, price, stock_qty, low_stock_level,
 
 
 def update_product(product_id, name, price, low_stock_level,
-                   supplier_id, category_id, image_path=None):
+                   supplier_id, category_id, image_path=None,
+                   brand=None, size=None, unit="pc", cost_price=0.0,
+                   expiration_date=None):
     """Update product info only. Stock is handled separately by set_stock()."""
     conn = get_connection()
     try:
         conn.execute("""
             UPDATE products
-            SET name = ?, price = ?, low_stock_level = ?,
-                supplier_id = ?, category_id = ?, image_path = ?
+            SET name = ?, brand = ?, size = ?, unit = ?, cost_price = ?,
+                price = ?, low_stock_level = ?, expiration_date = ?,
+                supplier_id = ?, category_id = ?, image_path = ?,
+                updated_at = ?
             WHERE product_id = ?
-        """, (name, price, low_stock_level,
-              supplier_id, category_id, image_path, product_id))
+        """, (name, brand, size, unit, cost_price,
+              price, low_stock_level, expiration_date,
+              supplier_id, category_id, image_path,
+              now_local(), product_id))
         conn.commit()
         return True, "Product updated."
     except Exception as e:
@@ -173,14 +182,12 @@ def set_stock(product_id, stock_qty):
     try:
         cur = conn.cursor()
 
-        # ---- Try update first ----
         cur.execute("""
             UPDATE inventory
             SET stock_qty = ?, updated_at = ?
             WHERE product_id = ?
         """, (stock_qty, now_local(), product_id))
 
-        # ---- If nothing updated, insert a fresh row ----
         if cur.rowcount == 0:
             cur.execute("""
                 INSERT INTO inventory (product_id, stock_qty, updated_at)
@@ -220,12 +227,30 @@ def restock_product(product_id, quantity):
         conn.close()
 
 
+def update_cost_price(product_id, cost_price):
+    """Set the last-paid cost for a product (standalone; used outside txn)."""
+    conn = get_connection()
+    try:
+        conn.execute("""
+            UPDATE products
+            SET cost_price = ?, updated_at = ?
+            WHERE product_id = ?
+        """, (cost_price, now_local(), product_id))
+        conn.commit()
+        return True, "Cost price updated."
+    except Exception as e:
+        return False, str(e)
+    finally:
+        conn.close()
+
+
 def archive_product(product_id):
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE products SET is_archived = 1 WHERE product_id = ?",
-            (product_id,)
+            "UPDATE products SET is_archived = 1, updated_at = ? "
+            "WHERE product_id = ?",
+            (now_local(), product_id)
         )
         conn.commit()
         return True, "Product archived."
@@ -239,8 +264,9 @@ def unarchive_product(product_id):
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE products SET is_archived = 0 WHERE product_id = ?",
-            (product_id,)
+            "UPDATE products SET is_archived = 0, updated_at = ? "
+            "WHERE product_id = ?",
+            (now_local(), product_id)
         )
         conn.commit()
         return True, "Product restored."
@@ -312,6 +338,17 @@ def add_stock_cur(cur, product_id, qty):
             INSERT INTO inventory (product_id, stock_qty, updated_at)
             VALUES (?, ?, ?)
         """, (product_id, qty, now_local()))
+
+
+def set_cost_price_cur(cur, product_id, cost_price):
+    """Update cost_price inside an open transaction (used on PO receive)."""
+    cur.execute("""
+        UPDATE products
+        SET cost_price = ?, updated_at = ?
+        WHERE product_id = ?
+    """, (cost_price, now_local(), product_id))
+
+
 # ─────────────────────────────────────────────
 # DASHBOARD HELPERS
 # ─────────────────────────────────────────────
@@ -322,7 +359,6 @@ def get_product_counts():
       - total_products (non-archived)
       - low_stock_count
       - out_of_stock_count
-    Works with the split schema (stock is in `inventory`).
     """
     conn = get_connection()
 

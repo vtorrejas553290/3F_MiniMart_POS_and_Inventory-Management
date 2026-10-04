@@ -3,7 +3,7 @@
 # ─────────────────────────────────────────────
 
 from database import get_connection, now_local
-from models.product_model import add_stock_cur
+from models.product_model import add_stock_cur, set_cost_price_cur
 
 
 # ─────────────────────────────────────────────
@@ -30,7 +30,8 @@ def create_purchase(supplier_id, user_id, items, notes=""):
 
         for i in items:
             cur.execute("""
-                INSERT INTO purchase_items (purchase_id, product_id, quantity, cost)
+                INSERT INTO purchase_items
+                    (purchase_id, product_id, quantity, cost)
                 VALUES (?, ?, ?, ?)
             """, (pid, i["product_id"], i["quantity"], i["cost"]))
 
@@ -46,7 +47,8 @@ def create_purchase(supplier_id, user_id, items, notes=""):
 
 def receive_purchase(purchase_id, user_id):
     """
-    Mark a PO as received and add the ordered quantities to stock.
+    Mark a PO as received, add the ordered quantities to stock,
+    and update each product's cost_price to the last-paid cost.
     """
     conn = get_connection()
     try:
@@ -63,14 +65,18 @@ def receive_purchase(purchase_id, user_id):
         if row["status"] != "Ordered":
             return False, f"Purchase is already '{row['status']}'."
 
-        # ---- Add stock for each line ----
-        items = cur.execute(
-            "SELECT product_id, quantity FROM purchase_items WHERE purchase_id = ?",
-            (purchase_id,)
-        ).fetchall()
+        # ---- Fetch items WITH cost so we can update cost_price ----
+        items = cur.execute("""
+            SELECT product_id, quantity, cost
+            FROM purchase_items
+            WHERE purchase_id = ?
+        """, (purchase_id,)).fetchall()
 
         for item in items:
+            # ---- Add to stock ----
             add_stock_cur(cur, item["product_id"], item["quantity"])
+            # ---- Last-paid cost becomes the product's cost_price ----
+            set_cost_price_cur(cur, item["product_id"], item["cost"])
 
         # ---- Mark as received ----
         cur.execute("""

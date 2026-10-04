@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────
-# TRANSACTIONS VIEW (individual transaction list)
+# TRANSACTIONS TAB (embedded inside SalesView)
 # ─────────────────────────────────────────────
 
 import customtkinter as ctk
@@ -16,7 +16,7 @@ from config import (
 )
 
 
-class TransactionsView(ctk.CTkFrame):
+class TransactionsTab(ctk.CTkFrame):
 
     PAGE_SIZE = 10
 
@@ -47,24 +47,17 @@ class TransactionsView(ctk.CTkFrame):
 
     def _build(self):
         # ═════════════════════════════════════════
-        # PAGE HEADER
+        # SUB-HEADER (small caption only — no big title)
         # ═════════════════════════════════════════
 
-        header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        header_frame.pack(fill="x", padx=20, pady=(20, 10))
+        sub_header = ctk.CTkFrame(self, fg_color="transparent")
+        sub_header.pack(fill="x", padx=20, pady=(10, 10))
 
-        title_box = ctk.CTkFrame(header_frame, fg_color="transparent")
-        title_box.pack(side="left")
-
-        ctk.CTkLabel(title_box, text="Transactions",
-                     font=font_bold(22),
-                     text_color=FG_PRIMARY,
-                     anchor="w").pack(fill="x")
-        ctk.CTkLabel(title_box,
+        ctk.CTkLabel(sub_header,
                      text="View individual sales transactions",
                      font=font(11),
                      text_color=FG_SECONDARY,
-                     anchor="w").pack(fill="x", pady=(2, 0))
+                     anchor="w").pack(side="left")
 
         # ═════════════════════════════════════════
         # FILTER CARD
@@ -107,7 +100,6 @@ class TransactionsView(ctk.CTkFrame):
                       text_color=NEUTRAL_TEXT,
                       command=self._clear_search).pack(side="left", padx=(0, 20))
 
-        # ---- Payment filter ----
         ctk.CTkLabel(row1, text="Payment",
                      font=font_bold(11),
                      text_color=FG_SECONDARY).pack(side="left", padx=(0, 8))
@@ -127,7 +119,6 @@ class TransactionsView(ctk.CTkFrame):
             command=self._on_payment_change,
         ).pack(side="left", padx=(0, 20))
 
-        # ---- Refresh button ----
         ctk.CTkButton(row1, text="Refresh", width=100, height=36,
                       corner_radius=8,
                       font=font_bold(12),
@@ -176,7 +167,6 @@ class TransactionsView(ctk.CTkFrame):
         )
         self.date_to_e.pack(side="left", padx=(0, 16))
 
-        # ---- Quick range buttons ----
         self.btn_today = ctk.CTkButton(
             row2, text="Today", width=80, height=36,
             corner_radius=8,
@@ -217,7 +207,6 @@ class TransactionsView(ctk.CTkFrame):
         )
         self.btn_clear.pack(side="left", padx=2)
 
-        # ---- Results count ----
         self.count_label = ctk.CTkLabel(row2, text="",
                                         font=font_bold(11),
                                         text_color=FG_SECONDARY)
@@ -326,7 +315,7 @@ class TransactionsView(ctk.CTkFrame):
         self.search_var.set("")
 
     # ─────────────────────────────────────────────
-    # FILTERS — PAYMENT METHOD
+    # FILTERS — PAYMENT
     # ─────────────────────────────────────────────
 
     def _on_payment_change(self, choice):
@@ -335,7 +324,7 @@ class TransactionsView(ctk.CTkFrame):
         self._refresh_transactions()
 
     # ─────────────────────────────────────────────
-    # QUICK-RANGE BUTTON HIGHLIGHT
+    # QUICK-RANGE HIGHLIGHT
     # ─────────────────────────────────────────────
 
     def _highlight_button(self, button):
@@ -355,7 +344,7 @@ class TransactionsView(ctk.CTkFrame):
         self.active_range_button = None
 
     # ─────────────────────────────────────────────
-    # FILTERS — DATE RANGE (auto-apply)
+    # FILTERS — DATE RANGE
     # ─────────────────────────────────────────────
 
     def _on_date_change(self, *args):
@@ -412,10 +401,6 @@ class TransactionsView(ctk.CTkFrame):
     def _clear_dates(self):
         self._set_dates_programmatically("", "", self.btn_clear)
 
-    # ─────────────────────────────────────────────
-    # HELPER — PROGRAMMATIC DATE SET
-    # ─────────────────────────────────────────────
-
     def _set_dates_programmatically(self, d_from, d_to, button):
         self._programmatic_set = True
         self.date_from_var.set(d_from)
@@ -449,11 +434,9 @@ class TransactionsView(ctk.CTkFrame):
         for w in self.list_frame.winfo_children():
             w.destroy()
 
-        # ---- Total count ----
         total = len(transactions)
         self.count_label.configure(text=f"{total} transaction(s)")
 
-        # ---- Pagination math ----
         self.total_pages = max(1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
         if self.current_page > self.total_pages:
             self.current_page = self.total_pages
@@ -492,7 +475,6 @@ class TransactionsView(ctk.CTkFrame):
         for i, t in enumerate(page_rows):
             self._render_row(t, i)
 
-        # ---- Update pager ----
         self._update_pager()
 
     def _render_row(self, t, txn_index=0):
@@ -623,7 +605,7 @@ class TransactionsView(ctk.CTkFrame):
 
 
 # ─────────────────────────────────────────────
-# TRANSACTION DETAIL DIALOG (styled)
+# TRANSACTION DETAIL DIALOG
 # ─────────────────────────────────────────────
 
 class TransactionDetailDialog(ctk.CTkToplevel):

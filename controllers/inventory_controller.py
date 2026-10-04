@@ -37,19 +37,27 @@ class InventoryController:
         return get_low_stock_products()
 
     @staticmethod
-    def add(user, name, price, stock, low, supplier_id, category_id, image_path=None):
-        ok, msg = add_product(name, price, stock, low,
-                              supplier_id, category_id, image_path)
+    def add(user, name, price, stock, low, supplier_id, category_id,
+            image_path=None, brand=None, size=None, unit="pc",
+            cost_price=0.0, expiration_date=None):
+        ok, msg = add_product(
+            name, price, stock, low, supplier_id, category_id,
+            image_path, brand, size, unit, cost_price, expiration_date,
+        )
         if ok:
             log_action(user["user_id"], "ADD_PRODUCT", name)
         return ok, msg
 
     @staticmethod
     def update(user, product_id, name, price, stock, low,
-               supplier_id, category_id, image_path=None):
+               supplier_id, category_id, image_path=None,
+               brand=None, size=None, unit="pc",
+               cost_price=0.0, expiration_date=None):
         # ---- Update product info ----
-        ok, msg = update_product(product_id, name, price, low,
-                                 supplier_id, category_id, image_path)
+        ok, msg = update_product(
+            product_id, name, price, low, supplier_id, category_id,
+            image_path, brand, size, unit, cost_price, expiration_date,
+        )
         if not ok:
             return ok, msg
 

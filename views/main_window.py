@@ -19,8 +19,7 @@ from views.pos_view import POSView
 from views.inventory_view import InventoryView
 from views.supplier_view import SupplierView
 from views.purchase_view import PurchaseView
-from views.reports_view import ReportsView
-from views.transactions_view import TransactionsView
+from views.sales_view import SalesView
 from views.activity_log_view import ActivityLogView
 from views.user_management_view import UserManagementView
 
@@ -36,7 +35,6 @@ class MainWindow(ctk.CTk):
         self.title(f"{APP_NAME} - Dashboard")
         self.configure(fg_color=BG_MAIN)
 
-        # ---- Maximize on open ----
         self.after(0, lambda: self.state("zoomed"))
         self.minsize(1000, 600)
 
@@ -51,7 +49,7 @@ class MainWindow(ctk.CTk):
 
     def _build(self):
         # ═════════════════════════════════════════
-        # SIDEBAR — deep navy
+        # SIDEBAR
         # ═════════════════════════════════════════
 
         sidebar = ctk.CTkFrame(self, width=240, corner_radius=0,
@@ -95,18 +93,17 @@ class MainWindow(ctk.CTk):
                      anchor="w").pack(fill="x", padx=22, pady=(4, 4))
 
         # ---- Navigation (everyone) ----
-        self._nav_button(sidebar, "dashboard", "🏠   Dashboard",        self._show_dashboard)
+        self._nav_button(sidebar, "dashboard", "🏠   Dashboard", self._show_dashboard)
         self._nav_button(sidebar, "pos",       "🛒   POS",       self._show_pos)
-        self._nav_button(sidebar, "inventory", "📦   Inventory",         self._show_inventory)
-        self._nav_button(sidebar, "transactions", "📋   Transactions",     self._show_transactions) 
+        self._nav_button(sidebar, "inventory", "📦   Inventory", self._show_inventory)
+        self._nav_button(sidebar, "sales",     "💰   Sales",     self._show_sales)
 
         # ---- Admin-only ----
         if AuthController.is_admin():
-            self._nav_button(sidebar, "reports",   "📊   Sales Reports",           self._show_reports)
-            self._nav_button(sidebar, "suppliers", "🏢   Suppliers",         self._show_suppliers)
-            self._nav_button(sidebar, "purchases", "📋   Purchase Records",  self._show_purchases)
-            self._nav_button(sidebar, "users",     "👤   User Management",   self._show_users)
-            self._nav_button(sidebar, "logs",      "📝   Activity Logs",     self._show_logs)
+            self._nav_button(sidebar, "suppliers", "🏢   Suppliers",        self._show_suppliers)
+            self._nav_button(sidebar, "purchases", "📋   Purchase Records", self._show_purchases)
+            self._nav_button(sidebar, "users",     "👤   User Management",  self._show_users)
+            self._nav_button(sidebar, "logs",      "📝   Activity Logs",    self._show_logs)
 
         # ---- Logout ----
         ctk.CTkButton(
@@ -171,20 +168,24 @@ class MainWindow(ctk.CTk):
     def _navigate_by_key(self, key):
         """Used by dashboard shortcuts to jump to another view."""
         # ---- Block admin-only shortcuts for staff ----
-        ADMIN_ONLY = {"reports", "suppliers", "purchases", "users", "logs"}
+        ADMIN_ONLY = {"suppliers", "purchases", "users", "logs"}
         if key in ADMIN_ONLY and not AuthController.is_admin():
             return
 
+        # ---- Legacy dashboard shortcuts to "reports"/"transactions"
+        #      should now route to the Sales view (Reports tab for admin) ----
+        if key in ("reports", "transactions"):
+            key = "sales"
+
         mapping = {
-            "dashboard":    self._show_dashboard,
-            "pos":          self._show_pos,
-            "inventory":    self._show_inventory,
-            "reports":      self._show_reports,
-            "transactions": self._show_transactions,
-            "suppliers":    self._show_suppliers,
-            "purchases":    self._show_purchases,
-            "users":        self._show_users,
-            "logs":         self._show_logs,
+            "dashboard": self._show_dashboard,
+            "pos":       self._show_pos,
+            "inventory": self._show_inventory,
+            "sales":     self._show_sales,
+            "suppliers": self._show_suppliers,
+            "purchases": self._show_purchases,
+            "users":     self._show_users,
+            "logs":      self._show_logs,
         }
         if key in mapping:
             self._navigate(key, mapping[key])
@@ -215,15 +216,9 @@ class MainWindow(ctk.CTk):
         self._clear_content()
         InventoryView(self.content, self.user).pack(fill="both", expand=True)
 
-    def _show_reports(self):
-        if not AuthController.is_admin():
-            return
+    def _show_sales(self):
         self._clear_content()
-        ReportsView(self.content, self.user).pack(fill="both", expand=True)
-
-    def _show_transactions(self):                        # NEW
-            self._clear_content()
-            TransactionsView(self.content, self.user).pack(fill="both", expand=True)
+        SalesView(self.content, self.user).pack(fill="both", expand=True)
 
     # ─────────────────────────────────────────────
     # ADMIN-ONLY HANDLERS

@@ -9,7 +9,7 @@
 #   users ──< activity_logs
 #   supplier_categories ──< suppliers ──< products
 #   categories          ──< products
-#   products            ──< inventory          ← NEW
+#   products            ──< inventory
 #
 # Root tables: users, categories, supplier_categories
 
@@ -104,13 +104,19 @@ def initialize_database():
             product_id      INTEGER PRIMARY KEY AUTOINCREMENT,
             product_code    TEXT UNIQUE NOT NULL,
             name            TEXT NOT NULL,
+            brand           TEXT,
+            size            TEXT,
+            unit            TEXT DEFAULT 'pc',
+            cost_price      REAL DEFAULT 0,
             price           REAL NOT NULL,
             low_stock_level INTEGER DEFAULT 10,
+            expiration_date TEXT,
             image_path      TEXT,
             is_archived     INTEGER DEFAULT 0,
             supplier_id     INTEGER NOT NULL,
             category_id     INTEGER NOT NULL,
             created_at      TEXT NOT NULL,
+            updated_at      TEXT,
             FOREIGN KEY (supplier_id) REFERENCES suppliers(supplier_id),
             FOREIGN KEY (category_id) REFERENCES categories(category_id)
         )
@@ -227,6 +233,20 @@ def _run_migrations(cur, conn):
          "products.image_path"),
         ("ALTER TABLE products ADD COLUMN is_archived INTEGER DEFAULT 0",
          "products.is_archived"),
+
+        # ---- products (new attributes) ----
+        ("ALTER TABLE products ADD COLUMN brand TEXT",
+         "products.brand"),
+        ("ALTER TABLE products ADD COLUMN size TEXT",
+         "products.size"),
+        ("ALTER TABLE products ADD COLUMN unit TEXT DEFAULT 'pc'",
+         "products.unit"),
+        ("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0",
+         "products.cost_price"),
+        ("ALTER TABLE products ADD COLUMN expiration_date TEXT",
+         "products.expiration_date"),
+        ("ALTER TABLE products ADD COLUMN updated_at TEXT",
+         "products.updated_at"),
 
         # ---- purchases ----
         ("ALTER TABLE purchases ADD COLUMN status TEXT DEFAULT 'Ordered'",

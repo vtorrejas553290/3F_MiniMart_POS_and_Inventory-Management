@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────
-# REPORTS VIEW (summary + top selling products)
+# REPORTS TAB (embedded inside SalesView)
 # ─────────────────────────────────────────────
 
 import customtkinter as ctk
@@ -15,7 +15,7 @@ from config import (
 )
 
 
-class ReportsView(ctk.CTkFrame):
+class ReportsTab(ctk.CTkFrame):
 
     ACTIVE_COLOR = ACCENT
     IDLE_COLOR   = NEUTRAL
@@ -27,7 +27,7 @@ class ReportsView(ctk.CTkFrame):
         # ---- Filter state ----
         self.date_from = ""
         self.date_to = ""
-        self.search_query = ""          # ← FIX #1: initialize it
+        self.search_query = ""
         self.payment_filter = "All"
 
         # ---- Active quick-range button ----
@@ -43,24 +43,17 @@ class ReportsView(ctk.CTkFrame):
 
     def _build(self):
         # ═════════════════════════════════════════
-        # PAGE HEADER
+        # SUB-HEADER (small caption only)
         # ═════════════════════════════════════════
 
-        header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        header_frame.pack(fill="x", padx=20, pady=(20, 10))
+        sub_header = ctk.CTkFrame(self, fg_color="transparent")
+        sub_header.pack(fill="x", padx=20, pady=(10, 10))
 
-        title_box = ctk.CTkFrame(header_frame, fg_color="transparent")
-        title_box.pack(side="left")
-
-        ctk.CTkLabel(title_box, text="Reports",
-                     font=font_bold(22),
-                     text_color=FG_PRIMARY,
-                     anchor="w").pack(fill="x")
-        ctk.CTkLabel(title_box,
+        ctk.CTkLabel(sub_header,
                      text="Summary and top selling products",
                      font=font(11),
                      text_color=FG_SECONDARY,
-                     anchor="w").pack(fill="x", pady=(2, 0))
+                     anchor="w").pack(side="left")
 
         # ═════════════════════════════════════════
         # SUMMARY CARD
@@ -74,7 +67,6 @@ class ReportsView(ctk.CTkFrame):
         summary_card.pack(fill="x", padx=20, pady=(0, 10))
         summary_card.pack_propagate(False)
 
-        # ---- Left: Total Sales ----
         left_stat = ctk.CTkFrame(summary_card, fg_color="transparent")
         left_stat.pack(side="left", fill="both", padx=20, pady=14)
 
@@ -88,11 +80,9 @@ class ReportsView(ctk.CTkFrame):
                                               anchor="w")
         self.total_sales_label.pack(fill="x", pady=(2, 0))
 
-        # ---- Divider ----
         ctk.CTkFrame(summary_card, width=1, fg_color=BORDER).pack(
             side="left", fill="y", pady=14)
 
-        # ---- Middle: Transactions ----
         mid_stat = ctk.CTkFrame(summary_card, fg_color="transparent")
         mid_stat.pack(side="left", fill="both", padx=20, pady=14)
 
@@ -106,11 +96,9 @@ class ReportsView(ctk.CTkFrame):
                                             anchor="w")
         self.txn_count_label.pack(fill="x", pady=(2, 0))
 
-        # ---- Divider ----
         ctk.CTkFrame(summary_card, width=1, fg_color=BORDER).pack(
             side="left", fill="y", pady=14)
 
-        # ---- Right: Payment breakdown ----
         right_stat = ctk.CTkFrame(summary_card, fg_color="transparent",
                                   width=260)
         right_stat.pack(side="left", fill="y", padx=20, pady=14)
@@ -121,7 +109,6 @@ class ReportsView(ctk.CTkFrame):
                      text_color=FG_SECONDARY,
                      anchor="w").pack(fill="x")
 
-        # ---- Cash row ----
         cash_row = ctk.CTkFrame(right_stat, fg_color="transparent")
         cash_row.pack(fill="x", pady=(6, 0))
 
@@ -133,7 +120,6 @@ class ReportsView(ctk.CTkFrame):
                                              text_color=SUCCESS)
         self.cash_total_label.pack(side="right")
 
-        # ---- GCash row ----
         gcash_row = ctk.CTkFrame(right_stat, fg_color="transparent")
         gcash_row.pack(fill="x", pady=(2, 0))
 
@@ -145,7 +131,6 @@ class ReportsView(ctk.CTkFrame):
                                               text_color=ACCENT)
         self.gcash_total_label.pack(side="right")
 
-        # ---- Date range label (placed at bottom of the card, not overlapping) ----
         self.range_label = ctk.CTkLabel(summary_card, text="",
                                         font=font(10),
                                         text_color=FG_MUTED)
@@ -161,7 +146,6 @@ class ReportsView(ctk.CTkFrame):
                                    border_color=BORDER)
         filter_card.pack(fill="x", padx=20, pady=(0, 10))
 
-        # ---- Row 1: search + payment + refresh ----
         row1 = ctk.CTkFrame(filter_card, fg_color="transparent")
         row1.pack(fill="x", padx=16, pady=(14, 6))
 
@@ -192,7 +176,6 @@ class ReportsView(ctk.CTkFrame):
                       text_color=NEUTRAL_TEXT,
                       command=self._clear_search).pack(side="left", padx=(0, 20))
 
-        # ---- Payment filter ----
         ctk.CTkLabel(row1, text="Payment",
                      font=font_bold(11),
                      text_color=FG_SECONDARY).pack(side="left", padx=(0, 8))
@@ -212,14 +195,12 @@ class ReportsView(ctk.CTkFrame):
             command=self._on_payment_change,
         ).pack(side="left", padx=(0, 20))
 
-        # ---- Refresh button ----
         ctk.CTkButton(row1, text="Refresh", width=100, height=36,
                       corner_radius=8,
                       font=font_bold(12),
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
                       command=self._refresh).pack(side="right")
 
-        # ---- Row 2: date range ----
         row2 = ctk.CTkFrame(filter_card, fg_color="transparent")
         row2.pack(fill="x", padx=16, pady=(0, 14))
 
@@ -261,7 +242,6 @@ class ReportsView(ctk.CTkFrame):
         )
         self.date_to_e.pack(side="left", padx=(0, 16))
 
-        # ---- Quick range buttons ----
         self.btn_today = ctk.CTkButton(
             row2, text="Today", width=80, height=36,
             corner_radius=8,
@@ -302,7 +282,6 @@ class ReportsView(ctk.CTkFrame):
         )
         self.btn_clear.pack(side="left", padx=2)
 
-        # ---- Results count ----
         self.count_label = ctk.CTkLabel(row2, text="",
                                         font=font_bold(11),
                                         text_color=FG_SECONDARY)
@@ -318,7 +297,6 @@ class ReportsView(ctk.CTkFrame):
                                 border_color=BORDER)
         top_card.pack(fill="both", expand=True, padx=20, pady=(0, 20))
 
-        # ---- Header ----
         top_header = ctk.CTkFrame(top_card, fg_color="transparent")
         top_header.pack(fill="x", padx=16, pady=(14, 8))
 
@@ -332,11 +310,9 @@ class ReportsView(ctk.CTkFrame):
                      text_color=FG_MUTED,
                      anchor="e").pack(side="right")
 
-        # ---- Divider ----
         ctk.CTkFrame(top_card, height=1, fg_color=BORDER).pack(
             fill="x", padx=16)
 
-        # ---- Scrollable list ----
         self.list_frame = ctk.CTkScrollableFrame(top_card, fg_color="transparent")
         self.list_frame.pack(fill="both", expand=True, padx=8, pady=8)
 
@@ -352,7 +328,7 @@ class ReportsView(ctk.CTkFrame):
         self.search_var.set("")
 
     # ─────────────────────────────────────────────
-    # FILTERS — PAYMENT METHOD
+    # FILTERS — PAYMENT
     # ─────────────────────────────────────────────
 
     def _on_payment_change(self, choice):
@@ -360,7 +336,7 @@ class ReportsView(ctk.CTkFrame):
         self._refresh()
 
     # ─────────────────────────────────────────────
-    # QUICK-RANGE BUTTON HIGHLIGHT
+    # QUICK-RANGE HIGHLIGHT
     # ─────────────────────────────────────────────
 
     def _highlight_button(self, button):
@@ -380,7 +356,7 @@ class ReportsView(ctk.CTkFrame):
         self.active_range_button = None
 
     # ─────────────────────────────────────────────
-    # FILTERS — DATE RANGE (auto-apply)
+    # FILTERS — DATE RANGE
     # ─────────────────────────────────────────────
 
     def _on_date_change(self, *args):
@@ -436,10 +412,6 @@ class ReportsView(ctk.CTkFrame):
     def _clear_dates(self):
         self._set_dates_programmatically("", "", self.btn_clear)
 
-    # ─────────────────────────────────────────────
-    # HELPER — PROGRAMMATIC DATE SET
-    # ─────────────────────────────────────────────
-
     def _set_dates_programmatically(self, d_from, d_to, button):
         self._programmatic_set = True
         self.date_from_var.set(d_from)
@@ -452,19 +424,17 @@ class ReportsView(ctk.CTkFrame):
         self._refresh()
 
     # ─────────────────────────────────────────────
-    # REFRESH (with visible error handling)
+    # REFRESH
     # ─────────────────────────────────────────────
 
     def _refresh(self):
         try:
-            # ---- Summary ----
             summary = ReportController.summary(
                 date_from=self.date_from or None,
                 date_to=self.date_to or None,
             )
             self._update_summary(summary)
 
-            # ---- Top selling products ----
             top_products = ReportController.top_selling_products(
                 date_from=self.date_from or None,
                 date_to=self.date_to or None,
@@ -475,7 +445,6 @@ class ReportsView(ctk.CTkFrame):
             self._render_top_products(top_products)
 
         except Exception as e:
-            # ---- Visible error so we don't get a silent blank screen ----
             import traceback
             traceback.print_exc()
 
@@ -487,7 +456,6 @@ class ReportsView(ctk.CTkFrame):
                          text_color=DANGER,
                          justify="left").pack(pady=20)
 
-            # ---- Reset summary fields so it doesn't look frozen ----
             self.total_sales_label.configure(text="—")
             self.txn_count_label.configure(text="—")
             self.cash_total_label.configure(text="—")
@@ -529,7 +497,6 @@ class ReportsView(ctk.CTkFrame):
 
         self.count_label.configure(text=f"{len(products)} product(s)")
 
-        # ---- Header row ----
         header = ctk.CTkFrame(self.list_frame, fg_color="transparent")
         header.pack(fill="x", pady=(4, 8))
 
@@ -547,7 +514,6 @@ class ReportsView(ctk.CTkFrame):
                          font=font_bold(11),
                          text_color=FG_SECONDARY).pack(side="left", padx=3)
 
-        # ---- Data rows ----
         for i, p in enumerate(products):
             bg = BG_ROW_ALT if i % 2 else BG_CARD
             row = ctk.CTkFrame(self.list_frame, fg_color=bg, corner_radius=6)
