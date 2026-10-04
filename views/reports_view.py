@@ -2,35 +2,35 @@
 # REPORTS TAB (embedded inside SalesView)
 # ─────────────────────────────────────────────
 
-import customtkinter as ctk
+from tkinter import messagebox
 from datetime import datetime, timedelta
 
+import customtkinter as ctk
+
+from utils_pkg.pdf_export import export_sales_report
 from controllers.report_controller import ReportController
 from config import (
     font, font_bold,
     BG_MAIN, BG_CARD, BG_INPUT, BG_ROW_ALT, BORDER,
     FG_PRIMARY, FG_SECONDARY, FG_MUTED,
-    ACCENT, ACCENT_HOVER, SUCCESS, DANGER,
+    BRAND_GREEN,
+    ACCENT, ACCENT_HOVER,
+    SUCCESS, DANGER,
     NEUTRAL, NEUTRAL_HOVER, NEUTRAL_TEXT,
 )
 
 
 class ReportsTab(ctk.CTkFrame):
 
-    ACTIVE_COLOR = ACCENT
-    IDLE_COLOR   = NEUTRAL
-
     def __init__(self, parent, user):
         super().__init__(parent, fg_color=BG_MAIN)
         self.user = user
 
-        # ---- Filter state ----
         self.date_from = ""
         self.date_to = ""
         self.search_query = ""
         self.payment_filter = "All"
 
-        # ---- Active quick-range button ----
         self.active_range_button = None
         self._programmatic_set = False
 
@@ -42,10 +42,6 @@ class ReportsTab(ctk.CTkFrame):
     # ─────────────────────────────────────────────
 
     def _build(self):
-        # ═════════════════════════════════════════
-        # SUB-HEADER (small caption only)
-        # ═════════════════════════════════════════
-
         sub_header = ctk.CTkFrame(self, fg_color="transparent")
         sub_header.pack(fill="x", padx=20, pady=(10, 10))
 
@@ -195,12 +191,19 @@ class ReportsTab(ctk.CTkFrame):
             command=self._on_payment_change,
         ).pack(side="left", padx=(0, 20))
 
+        ctk.CTkButton(row1, text="Export PDF", width=120, height=36,
+                      corner_radius=8,
+                      font=font_bold(12),
+                      fg_color=BRAND_GREEN, hover_color="#1E9040",
+                      command=self._export_pdf).pack(side="right", padx=(0, 6))
+
         ctk.CTkButton(row1, text="Refresh", width=100, height=36,
                       corner_radius=8,
                       font=font_bold(12),
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
                       command=self._refresh).pack(side="right")
 
+        # ---- Row 2: date range ----
         row2 = ctk.CTkFrame(filter_card, fg_color="transparent")
         row2.pack(fill="x", padx=16, pady=(0, 14))
 
@@ -317,7 +320,45 @@ class ReportsTab(ctk.CTkFrame):
         self.list_frame.pack(fill="both", expand=True, padx=8, pady=8)
 
     # ─────────────────────────────────────────────
-    # FILTERS — SEARCH
+    # EXPORT PDF
+    # ─────────────────────────────────────────────
+
+    def _export_pdf(self):
+        try:
+            summary = ReportController.summary(
+                date_from=self.date_from or None,
+                date_to=self.date_to or None,
+            )
+            products = ReportController.top_selling_products(
+                date_from=self.date_from or None,
+                date_to=self.date_to or None,
+                search=self.search_query or None,
+                payment_method=self.payment_filter,
+                limit=5,
+            )
+        except Exception as e:
+            messagebox.showerror("Export Failed", f"Could not fetch data:\n{e}")
+            return
+
+        summary_dict = dict(summary) if summary else {}
+
+        ok, result = export_sales_report(
+            summary=summary_dict,
+            top_products=products,
+            date_from=self.date_from or None,
+            date_to=self.date_to or None,
+            payment_filter=self.payment_filter,
+            parent_window=self.winfo_toplevel(),
+        )
+
+        if ok:
+            messagebox.showinfo("Export Complete",
+                                f"PDF saved to:\n{result}")
+        elif result != "Cancelled.":
+            messagebox.showerror("Export Failed", result)
+
+    # ─────────────────────────────────────────────
+    # FILTERS
     # ─────────────────────────────────────────────
 
     def _on_search_change(self, *args):
@@ -327,17 +368,9 @@ class ReportsTab(ctk.CTkFrame):
     def _clear_search(self):
         self.search_var.set("")
 
-    # ─────────────────────────────────────────────
-    # FILTERS — PAYMENT
-    # ─────────────────────────────────────────────
-
     def _on_payment_change(self, choice):
         self.payment_filter = choice
         self._refresh()
-
-    # ─────────────────────────────────────────────
-    # QUICK-RANGE HIGHLIGHT
-    # ─────────────────────────────────────────────
 
     def _highlight_button(self, button):
         if self.active_range_button is not None:
@@ -354,10 +387,6 @@ class ReportsTab(ctk.CTkFrame):
                 fg_color=NEUTRAL, text_color=NEUTRAL_TEXT,
             )
         self.active_range_button = None
-
-    # ─────────────────────────────────────────────
-    # FILTERS — DATE RANGE
-    # ─────────────────────────────────────────────
 
     def _on_date_change(self, *args):
         if self._programmatic_set:
@@ -388,10 +417,6 @@ class ReportsTab(ctk.CTkFrame):
             return True
         except ValueError:
             return False
-
-    # ─────────────────────────────────────────────
-    # QUICK RANGES
-    # ─────────────────────────────────────────────
 
     def _range_today(self):
         today = datetime.now().strftime("%Y-%m-%d")
@@ -501,12 +526,14 @@ class ReportsTab(ctk.CTkFrame):
         header.pack(fill="x", pady=(4, 8))
 
         cols = [
-            ("#",              40),
-            ("Product",        220),
+            ("#",              30),
+            ("Product",        260),
             ("Code",           100),
             ("Units Sold",     90),
-            ("Transactions",   100),
-            ("Revenue",        100),
+            ("Cost",           85),
+            ("Price",          85),
+            ("Profit",         100),
+            ("Revenue",        110),
         ]
         for text, width in cols:
             ctk.CTkLabel(header, text=text, width=width,
@@ -519,27 +546,55 @@ class ReportsTab(ctk.CTkFrame):
             row = ctk.CTkFrame(self.list_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=1)
 
+            display = " ".join(
+                part for part in (p.get("brand"), p["product_name"], p.get("size"))
+                if part
+            )
+
+            profit = p.get("profit", 0)
+            if profit > 0:
+                profit_color = SUCCESS
+            elif profit < 0:
+                profit_color = DANGER
+            else:
+                profit_color = FG_MUTED
+
             ctk.CTkLabel(row, text=str(i + 1),
-                         width=40, anchor="w",
+                         width=30, anchor="w",
                          font=font_bold(11),
                          text_color=FG_MUTED).pack(side="left", padx=3, pady=6)
-            ctk.CTkLabel(row, text=p["product_name"],
-                         width=220, anchor="w",
+
+            ctk.CTkLabel(row, text=display,
+                         width=260, anchor="w",
                          font=font_bold(11),
                          text_color=FG_PRIMARY).pack(side="left", padx=3)
+
             ctk.CTkLabel(row, text=p["product_code"],
                          width=100, anchor="w",
                          font=font(11),
                          text_color=FG_SECONDARY).pack(side="left", padx=3)
+
             ctk.CTkLabel(row, text=f"{p['units_sold']:,}",
                          width=90, anchor="w",
                          font=font_bold(11),
                          text_color=FG_PRIMARY).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text=f"{p['transaction_count']:,}",
-                         width=100, anchor="w",
+
+            ctk.CTkLabel(row, text=f"₱{p['avg_cost']:.2f}",
+                         width=85, anchor="w",
                          font=font(11),
                          text_color=FG_SECONDARY).pack(side="left", padx=3)
-            ctk.CTkLabel(row, text=f"₱{p['revenue']:,.2f}",
+
+            ctk.CTkLabel(row, text=f"₱{p['avg_price']:.2f}",
+                         width=85, anchor="w",
+                         font=font(11),
+                         text_color=FG_SECONDARY).pack(side="left", padx=3)
+
+            ctk.CTkLabel(row, text=f"₱{profit:.2f}",
                          width=100, anchor="w",
+                         font=font_bold(11),
+                         text_color=profit_color).pack(side="left", padx=3)
+
+            ctk.CTkLabel(row, text=f"₱{p['revenue']:,.2f}",
+                         width=110, anchor="w",
                          font=font_bold(12),
                          text_color=ACCENT).pack(side="left", padx=3)

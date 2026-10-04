@@ -5,16 +5,12 @@
 from models.purchase_model import (
     create_purchase, receive_purchase, cancel_purchase,
     get_all_purchases, get_purchase, get_purchase_items,
-    get_purchases_by_supplier
+    get_purchases_by_supplier,
 )
 from models.activity_log_model import log_action
 
 
 class PurchaseController:
-
-    # ─────────────────────────────────────────────
-    # READS
-    # ─────────────────────────────────────────────
 
     @staticmethod
     def list_all():
@@ -36,12 +32,12 @@ class PurchaseController:
     def get_items(purchase_id):
         return get_purchase_items(purchase_id)
 
-    # ─────────────────────────────────────────────
-    # WRITES
-    # ─────────────────────────────────────────────
-
     @staticmethod
     def create(user, supplier_id, items, notes=""):
+        """
+        items = list of dicts:
+            {product_id, quantity, cost, expiration_date?}
+        """
         if not items:
             return False, "No items in the purchase order."
         ok, result = create_purchase(supplier_id, user["user_id"], items, notes)

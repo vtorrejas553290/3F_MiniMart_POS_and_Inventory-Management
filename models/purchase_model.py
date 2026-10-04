@@ -3,7 +3,21 @@
 # ─────────────────────────────────────────────
 
 from database import get_connection, now_local
-from models.product_model import add_stock_cur, set_cost_price_cur
+from models.batch_model import create_batch_cur
+
+
+# ─────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────
+
+def _full_name_sql(alias="u"):
+    return (
+        f"TRIM("
+        f"COALESCE({alias}.first_name, '') || ' ' || "
+        f"COALESCE({alias}.middle_name || ' ', '') || "
+        f"COALESCE({alias}.last_name, '')"
+        f") AS full_name"
+    )
 
 
 # ─────────────────────────────────────────────
@@ -13,8 +27,7 @@ from models.product_model import add_stock_cur, set_cost_price_cur
 def create_purchase(supplier_id, user_id, items, notes=""):
     """
     Create a Purchase Order (status = 'Ordered').
-    items = list of dicts: {product_id, quantity, cost}
-    Returns (success, purchase_id_or_error)
+    items = list of dicts: {product_id, quantity, cost, expiration_date}
     """
     total = sum(i["quantity"] * i["cost"] for i in items)
 
@@ -31,9 +44,10 @@ def create_purchase(supplier_id, user_id, items, notes=""):
         for i in items:
             cur.execute("""
                 INSERT INTO purchase_items
-                    (purchase_id, product_id, quantity, cost)
-                VALUES (?, ?, ?, ?)
-            """, (pid, i["product_id"], i["quantity"], i["cost"]))
+                    (purchase_id, product_id, quantity, cost, expiration_date)
+                VALUES (?, ?, ?, ?, ?)
+            """, (pid, i["product_id"], i["quantity"], i["cost"],
+                  i.get("expiration_date")))
 
         conn.commit()
         return True, pid
@@ -46,17 +60,12 @@ def create_purchase(supplier_id, user_id, items, notes=""):
 
 
 def receive_purchase(purchase_id, user_id):
-    """
-    Mark a PO as received, add the ordered quantities to stock,
-    and update each product's cost_price to the last-paid cost.
-    """
     conn = get_connection()
     try:
         cur = conn.cursor()
 
-        # ---- Confirm PO exists and is still 'Ordered' ----
         row = cur.execute(
-            "SELECT status FROM purchases WHERE purchase_id = ?",
+            "SELECT status, supplier_id FROM purchases WHERE purchase_id = ?",
             (purchase_id,)
         ).fetchone()
 
@@ -65,20 +74,30 @@ def receive_purchase(purchase_id, user_id):
         if row["status"] != "Ordered":
             return False, f"Purchase is already '{row['status']}'."
 
-        # ---- Fetch items WITH cost so we can update cost_price ----
+        supplier_id = row["supplier_id"]
+
         items = cur.execute("""
-            SELECT product_id, quantity, cost
+            SELECT product_id, quantity, cost, expiration_date
             FROM purchase_items
             WHERE purchase_id = ?
         """, (purchase_id,)).fetchall()
 
         for item in items:
-            # ---- Add to stock ----
-            add_stock_cur(cur, item["product_id"], item["quantity"])
-            # ---- Last-paid cost becomes the product's cost_price ----
-            set_cost_price_cur(cur, item["product_id"], item["cost"])
+            create_batch_cur(
+                cur,
+                product_id=item["product_id"],
+                quantity=item["quantity"],
+                cost_price=item["cost"],
+                expiration_date=item["expiration_date"],
+                supplier_id=supplier_id,
+                purchase_id=purchase_id,
+            )
+            cur.execute("""
+                UPDATE products
+                SET cost_price = ?, updated_at = ?
+                WHERE product_id = ?
+            """, (item["cost"], now_local(), item["product_id"]))
 
-        # ---- Mark as received ----
         cur.execute("""
             UPDATE purchases
             SET status = 'Received', received_at = ?
@@ -86,7 +105,7 @@ def receive_purchase(purchase_id, user_id):
         """, (now_local(), purchase_id))
 
         conn.commit()
-        return True, "Purchase received. Stock updated."
+        return True, "Purchase received. Batches created."
 
     except Exception as e:
         conn.rollback()
@@ -116,10 +135,10 @@ def cancel_purchase(purchase_id):
 
 def get_all_purchases(status=None, supplier_id=None):
     conn = get_connection()
-    sql = """
+    sql = f"""
         SELECT pu.*,
                s.name AS supplier_name,
-               u.username, u.full_name
+               u.username, {_full_name_sql('u')}
         FROM purchases pu
         JOIN suppliers s ON pu.supplier_id = s.supplier_id
         JOIN users u     ON pu.user_id     = u.user_id
@@ -141,10 +160,10 @@ def get_all_purchases(status=None, supplier_id=None):
 
 def get_purchase(purchase_id):
     conn = get_connection()
-    row = conn.execute("""
+    row = conn.execute(f"""
         SELECT pu.*,
                s.name AS supplier_name,
-               u.username, u.full_name
+               u.username, {_full_name_sql('u')}
         FROM purchases pu
         JOIN suppliers s ON pu.supplier_id = s.supplier_id
         JOIN users u     ON pu.user_id     = u.user_id

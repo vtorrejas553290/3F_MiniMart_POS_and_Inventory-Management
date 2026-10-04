@@ -7,6 +7,20 @@ from database import get_connection, now_local
 
 
 # ─────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────
+
+def _full_name_sql(alias="u"):
+    return (
+        f"TRIM("
+        f"COALESCE({alias}.first_name, '') || ' ' || "
+        f"COALESCE({alias}.middle_name || ' ', '') || "
+        f"COALESCE({alias}.last_name, '')"
+        f") AS full_name"
+    )
+
+
+# ─────────────────────────────────────────────
 # WRITE
 # ─────────────────────────────────────────────
 
@@ -30,13 +44,13 @@ def log_action(user_id, action, details="", retries=3):
 
 
 # ─────────────────────────────────────────────
-# READ — ALL (existing)
+# READ — ALL
 # ─────────────────────────────────────────────
 
 def get_all_logs(limit=500):
     conn = get_connection()
-    rows = conn.execute("""
-        SELECT l.*, u.username, u.full_name
+    rows = conn.execute(f"""
+        SELECT l.*, u.username, {_full_name_sql('u')}
         FROM activity_logs l
         JOIN users u ON l.user_id = u.user_id
         ORDER BY l.created_at DESC
@@ -47,18 +61,13 @@ def get_all_logs(limit=500):
 
 
 # ─────────────────────────────────────────────
-# READ — FILTERED (date range + search)
+# READ — FILTERED
 # ─────────────────────────────────────────────
 
 def get_logs_filtered(date_from=None, date_to=None, search=None, limit=1000):
-    """
-    Return activity logs filtered by:
-      - date range (YYYY-MM-DD) on created_at
-      - search term (username, full_name, action, details)
-    """
     conn = get_connection()
-    sql = """
-        SELECT l.*, u.username, u.full_name
+    sql = f"""
+        SELECT l.*, u.username, {_full_name_sql('u')}
         FROM activity_logs l
         JOIN users u ON l.user_id = u.user_id
         WHERE 1=1
@@ -75,7 +84,9 @@ def get_logs_filtered(date_from=None, date_to=None, search=None, limit=1000):
         q = f"%{search.lower()}%"
         sql += """ AND (
             LOWER(u.username)  LIKE ?
-            OR LOWER(u.full_name) LIKE ?
+            OR LOWER(COALESCE(u.first_name,'') || ' ' ||
+                     COALESCE(u.middle_name,'') || ' ' ||
+                     COALESCE(u.last_name,'')) LIKE ?
             OR LOWER(l.action)    LIKE ?
             OR LOWER(l.details)   LIKE ?
         )"""

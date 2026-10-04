@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────
-# POS VIEW (softened 3F MiniMart branding + search + pictures)
+# POS VIEW
 # ─────────────────────────────────────────────
 
 import os
@@ -23,10 +23,6 @@ from config import (
 
 class POSView(ctk.CTkFrame):
 
-    # ─────────────────────────────────────────────
-    # SETUP
-    # ─────────────────────────────────────────────
-
     def __init__(self, parent, user):
         super().__init__(parent, fg_color=BG_MAIN)
         self.user = user
@@ -35,19 +31,12 @@ class POSView(ctk.CTkFrame):
         self.selected_category_id = None
         self.search_query = ""
         self.products = InventoryController.list_products()
-
-        # ---- Map product_id → card widget (for shake animation) ----
         self._cards = {}
 
         self._build()
         self._refresh_cart()
 
-    # ─────────────────────────────────────────────
-    # BUILD
-    # ─────────────────────────────────────────────
-
     def _build(self):
-        # ---- Header ----
         header_frame = ctk.CTkFrame(self, fg_color="transparent")
         header_frame.pack(fill="x", padx=20, pady=(20, 10))
 
@@ -55,35 +44,25 @@ class POSView(ctk.CTkFrame):
         title_box.pack(side="left")
 
         ctk.CTkLabel(title_box, text="POS",
-                     font=font_bold(22),
-                     text_color=FG_PRIMARY,
+                     font=font_bold(22), text_color=FG_PRIMARY,
                      anchor="w").pack(fill="x")
-        ctk.CTkLabel(title_box,
-                     text="Select products and complete the sale",
-                     font=font(11),
-                     text_color=FG_SECONDARY,
+        ctk.CTkLabel(title_box, text="Select products and complete the sale",
+                     font=font(11), text_color=FG_SECONDARY,
                      anchor="w").pack(fill="x", pady=(2, 0))
 
-        # ---- Body (two columns) ----
         body = ctk.CTkFrame(self, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=20, pady=(0, 20))
 
-        # ═════════════════════════════════════════
-        # LEFT — PRODUCTS
-        # ═════════════════════════════════════════
-
-        left = ctk.CTkFrame(body, fg_color=BG_CARD,
-                            corner_radius=12,
-                            border_width=1,
-                            border_color=BORDER)
+        # LEFT
+        left = ctk.CTkFrame(body, fg_color=BG_CARD, corner_radius=12,
+                            border_width=1, border_color=BORDER)
         left.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
         products_title = ctk.CTkFrame(left, fg_color="transparent")
         products_title.pack(fill="x", padx=16, pady=(14, 6))
 
         ctk.CTkLabel(products_title, text="Products",
-                     font=font_bold(15),
-                     text_color=FG_PRIMARY,
+                     font=font_bold(15), text_color=FG_PRIMARY,
                      anchor="w").pack(side="left")
 
         self.count_label = ctk.CTkLabel(products_title, text="",
@@ -91,7 +70,6 @@ class POSView(ctk.CTkFrame):
                                         text_color=FG_SECONDARY)
         self.count_label.pack(side="right")
 
-        # ---- Search row ----
         search_row = ctk.CTkFrame(left, fg_color="transparent")
         search_row.pack(fill="x", padx=16, pady=(0, 6))
 
@@ -106,23 +84,17 @@ class POSView(ctk.CTkFrame):
             search_row,
             placeholder_text="Search by name or product code...",
             textvariable=self.search_var,
-            height=36,
-            corner_radius=8,
-            font=font(12),
-            fg_color=BG_INPUT,
-            border_color=BORDER,
-            border_width=1,
+            height=36, corner_radius=8, font=font(12),
+            fg_color=BG_INPUT, border_color=BORDER, border_width=1,
         )
         self.search_e.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
         ctk.CTkButton(search_row, text="✕", width=36, height=36,
-                      corner_radius=8,
-                      font=font(13),
+                      corner_radius=8, font=font(13),
                       fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
                       text_color=NEUTRAL_TEXT,
                       command=self._clear_search).pack(side="left")
 
-        # ---- Category row ----
         filter_row = ctk.CTkFrame(left, fg_color="transparent")
         filter_row.pack(fill="x", padx=16, pady=(0, 10))
 
@@ -134,49 +106,37 @@ class POSView(ctk.CTkFrame):
         self.category_var = ctk.StringVar(value="All Categories")
 
         self.category_menu = ctk.CTkOptionMenu(
-            filter_row,
-            values=self.category_names,
+            filter_row, values=self.category_names,
             variable=self.category_var,
-            width=200, height=36,
-            corner_radius=8,
-            font=font(12),
-            fg_color=BG_INPUT,
-            button_color=BG_INPUT,
-            button_hover_color=NEUTRAL,
-            text_color=FG_PRIMARY,
+            width=200, height=36, corner_radius=8, font=font(12),
+            fg_color=BG_INPUT, button_color=BG_INPUT,
+            button_hover_color=NEUTRAL, text_color=FG_PRIMARY,
             command=self._on_category_change,
         )
         self.category_menu.pack(side="left")
 
-        # ---- Product list ----
         self.product_frame = ctk.CTkScrollableFrame(left, fg_color="transparent")
         self.product_frame.pack(fill="both", expand=True, padx=10, pady=(0, 14))
-
         self._render_products()
 
-        # ═════════════════════════════════════════
-        # RIGHT — CART
-        # ═════════════════════════════════════════
-
+        # RIGHT
         right = ctk.CTkFrame(body, width=420, fg_color=BG_CARD,
-                             corner_radius=12,
-                             border_width=1,
+                             corner_radius=12, border_width=1,
                              border_color=BORDER)
         right.pack(side="right", fill="y")
         right.pack_propagate(False)
 
         ctk.CTkLabel(right, text="Cart",
-                     font=font_bold(15),
-                     text_color=FG_PRIMARY,
+                     font=font_bold(15), text_color=FG_PRIMARY,
                      anchor="w").pack(fill="x", padx=16, pady=(14, 6))
 
         self.cart_frame = ctk.CTkScrollableFrame(right, fg_color="transparent",
                                                  height=200)
         self.cart_frame.pack(fill="both", expand=True, padx=10, pady=(0, 6))
 
-        ctk.CTkFrame(right, height=1, fg_color=BORDER).pack(fill="x", padx=16, pady=(4, 0))
+        ctk.CTkFrame(right, height=1, fg_color=BORDER).pack(
+            fill="x", padx=16, pady=(4, 0))
 
-        # ---- Total ----
         total_box = ctk.CTkFrame(right, fg_color="transparent")
         total_box.pack(fill="x", padx=16, pady=(10, 6))
 
@@ -189,89 +149,54 @@ class POSView(ctk.CTkFrame):
                                         text_color=ACCENT)
         self.total_label.pack(side="right")
 
-        # ---- Payment method ----
         ctk.CTkLabel(right, text="PAYMENT METHOD",
                      font=font_bold(10),
                      text_color=FG_SECONDARY,
                      anchor="w").pack(fill="x", padx=16, pady=(6, 4))
 
         self.payment_var = ctk.StringVar(value="Cash")
-        self.payment_menu = ctk.CTkOptionMenu(
-            right,
-            values=["Cash", "GCash"],
+        ctk.CTkOptionMenu(
+            right, values=["Cash", "GCash"],
             variable=self.payment_var,
-            height=38,
-            corner_radius=8,
-            font=font(12),
-            fg_color=BG_INPUT,
-            button_color=BG_INPUT,
-            button_hover_color=NEUTRAL,
-            text_color=FG_PRIMARY,
-        )
-        self.payment_menu.pack(fill="x", padx=16, pady=(0, 8))
+            height=38, corner_radius=8, font=font(12),
+            fg_color=BG_INPUT, button_color=BG_INPUT,
+            button_hover_color=NEUTRAL, text_color=FG_PRIMARY,
+        ).pack(fill="x", padx=16, pady=(0, 8))
 
-        # ---- GCash reference (hidden until GCash selected) ----
         self.ref_label = ctk.CTkLabel(right, text="GCASH REFERENCE NO.",
                                       font=font_bold(10),
-                                      text_color=FG_SECONDARY,
-                                      anchor="w")
-        self.ref_entry = ctk.CTkEntry(
-            right,
-            height=38,
-            corner_radius=8,
-            font=font(13),
-            fg_color=BG_INPUT,
-            border_color=BORDER,
-            border_width=1,
-            placeholder_text="e.g. 1234567890123",
-        )
+                                      text_color=FG_SECONDARY, anchor="w")
+        self.ref_entry = ctk.CTkEntry(right, height=38, corner_radius=8,
+                                      font=font(13), fg_color=BG_INPUT,
+                                      border_color=BORDER, border_width=1,
+                                      placeholder_text="e.g. 1234567890123")
 
-        # ---- Amount paid ----
         self.amount_label = ctk.CTkLabel(right, text="AMOUNT PAID",
                                          font=font_bold(10),
-                                         text_color=FG_SECONDARY,
-                                         anchor="w")
+                                         text_color=FG_SECONDARY, anchor="w")
         self.amount_label.pack(fill="x", padx=16, pady=(0, 4))
 
-        self.amount_entry = ctk.CTkEntry(
-            right,
-            height=38,
-            corner_radius=8,
-            font=font(13),
-            fg_color=BG_INPUT,
-            border_color=BORDER,
-            border_width=1,
-            placeholder_text="0.00",
-        )
+        self.amount_entry = ctk.CTkEntry(right, height=38, corner_radius=8,
+                                         font=font(13), fg_color=BG_INPUT,
+                                         border_color=BORDER, border_width=1,
+                                         placeholder_text="0.00")
         self.amount_entry.pack(fill="x", padx=16, pady=(0, 12))
 
         self.payment_var.trace_add("write", self._on_payment_method_change)
 
-        # ---- Buttons ----
-        ctk.CTkButton(
-            right, text="Checkout",
-            height=44, corner_radius=8,
-            font=font_bold(14),
-            fg_color=BRAND_GREEN, hover_color="#1E9040",
-            command=self._checkout,
-        ).pack(fill="x", padx=16, pady=(0, 6))
+        ctk.CTkButton(right, text="Checkout", height=44, corner_radius=8,
+                      font=font_bold(14),
+                      fg_color=BRAND_GREEN, hover_color="#1E9040",
+                      command=self._checkout).pack(fill="x", padx=16, pady=(0, 6))
 
-        ctk.CTkButton(
-            right, text="Clear Cart",
-            height=38, corner_radius=8,
-            font=font_bold(12),
-            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
-            text_color=NEUTRAL_TEXT,
-            command=self._clear,
-        ).pack(fill="x", padx=16, pady=(0, 14))
-
-    # ─────────────────────────────────────────────
-    # PAYMENT METHOD CHANGE
-    # ─────────────────────────────────────────────
+        ctk.CTkButton(right, text="Clear Cart", height=38, corner_radius=8,
+                      font=font_bold(12),
+                      fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+                      text_color=NEUTRAL_TEXT,
+                      command=self._clear).pack(fill="x", padx=16, pady=(0, 14))
 
     def _on_payment_method_change(self, *args):
         method = self.payment_var.get()
-
         if method == "GCash":
             self.ref_label.pack(fill="x", padx=16, pady=(0, 4),
                                 before=self.amount_label)
@@ -281,10 +206,6 @@ class POSView(ctk.CTkFrame):
             self.ref_label.pack_forget()
             self.ref_entry.pack_forget()
             self.ref_entry.delete(0, "end")
-
-    # ─────────────────────────────────────────────
-    # SEARCH
-    # ─────────────────────────────────────────────
 
     def _on_search_change(self, *args):
         self.search_query = self.search_var.get().strip().lower()
@@ -303,10 +224,6 @@ class POSView(ctk.CTkFrame):
         ]
         return any(q in f for f in fields)
 
-    # ─────────────────────────────────────────────
-    # CATEGORY FILTER
-    # ─────────────────────────────────────────────
-
     def _on_category_change(self, choice):
         if choice == "All Categories":
             self.selected_category_id = None
@@ -320,22 +237,13 @@ class POSView(ctk.CTkFrame):
         self.products = InventoryController.list_by_category(self.selected_category_id)
         self._render_products()
 
-    # ─────────────────────────────────────────────
-    # DISPLAY HELPERS
-    # ─────────────────────────────────────────────
-
     @staticmethod
     def _display_name(p):
-        """Brand + Name + Size, skipping empty parts."""
         parts = [p["brand"], p["name"], p["size"]]
         return " ".join(part for part in parts if part)
 
     def _get_cart_quantity(self, product_id):
         return self.controller.get_quantity(product_id)
-
-    # ─────────────────────────────────────────────
-    # PRODUCT RENDERING
-    # ─────────────────────────────────────────────
 
     def _render_products(self):
         for w in self.product_frame.winfo_children():
@@ -351,9 +259,7 @@ class POSView(ctk.CTkFrame):
         if not products:
             msg = "No products match your search." if self.search_query \
                   else "No products in this category."
-            ctk.CTkLabel(self.product_frame,
-                         text=msg,
-                         font=font(12),
+            ctk.CTkLabel(self.product_frame, text=msg, font=font(12),
                          text_color=FG_MUTED).pack(pady=30)
             return
 
@@ -361,7 +267,6 @@ class POSView(ctk.CTkFrame):
             self._render_product_row(p)
 
     def _render_product_row(self, product):
-        """Render a product as a fully clickable card."""
         stock = product["stock_qty"]
         out_of_stock = stock <= 0
 
@@ -369,36 +274,26 @@ class POSView(ctk.CTkFrame):
         if low_level is None:
             low_level = 10
 
-        # ---- How many are already in the cart? ----
         in_cart = self._get_cart_quantity(product["product_id"])
         remaining = max(0, stock - in_cart)
         at_max = (stock > 0 and in_cart >= stock)
         already_in_cart = in_cart > 0
 
-        # ---- Card colors ----
         card_fg = BG_INPUT if (out_of_stock or at_max) else BG_CARD
         hover_fg = NEUTRAL if (out_of_stock or at_max) else "#EAF0FF"
 
         card = ctk.CTkFrame(
-            self.product_frame,
-            fg_color=card_fg,
-            corner_radius=10,
-            border_width=1,
-            border_color=BORDER,
-            height=76,
+            self.product_frame, fg_color=card_fg, corner_radius=10,
+            border_width=1, border_color=BORDER, height=76,
         )
         card.pack(fill="x", pady=4)
         card.pack_propagate(False)
-
-        # Register this card so the shake animation can find it
         self._cards[product["product_id"]] = card
 
-        # ---- Thumbnail ----
         thumb = self._load_thumbnail(product["image_path"], size=(56, 56))
 
         thumb_box = ctk.CTkFrame(
-            card,
-            width=56, height=56,
+            card, width=56, height=56,
             fg_color=NEUTRAL if (out_of_stock or at_max) else "#F1F5F9",
             corner_radius=8,
         )
@@ -410,20 +305,16 @@ class POSView(ctk.CTkFrame):
             thumb_label.place(relx=0.5, rely=0.5, anchor="center")
         else:
             thumb_label = ctk.CTkLabel(
-                thumb_box,
-                text="📦",
-                font=font(22),
+                thumb_box, text="📦", font=font(22),
                 text_color=FG_MUTED if (out_of_stock or at_max) else FG_SECONDARY,
             )
             thumb_label.place(relx=0.5, rely=0.5, anchor="center")
 
-        # ---- Info block ----
         info = ctk.CTkFrame(card, fg_color="transparent")
         info.place(x=78, rely=0.5, anchor="w")
 
         name_label = ctk.CTkLabel(
-            info,
-            text=self._display_name(product),
+            info, text=self._display_name(product),
             font=font_bold(13),
             text_color=FG_MUTED if (out_of_stock or at_max) else FG_PRIMARY,
             anchor="w",
@@ -442,8 +333,7 @@ class POSView(ctk.CTkFrame):
         sep1.pack(side="left")
 
         price_label = ctk.CTkLabel(
-            meta,
-            text=f"₱{product['price']:.2f}",
+            meta, text=f"₱{product['price']:.2f}",
             font=font_bold(12),
             text_color=FG_MUTED if (out_of_stock or at_max) else ACCENT,
         )
@@ -453,15 +343,13 @@ class POSView(ctk.CTkFrame):
                             text_color=FG_MUTED)
         sep2.pack(side="left")
 
-        # ---- Stock chip (shows REMAINING stock now) ----
+        # ---- Stock chip (uses remaining when in cart) ----
         if out_of_stock:
-            stock_text = "Out of Stock"
-            stock_color = DANGER
+            stock_text, stock_color = "Out of Stock", DANGER
         elif at_max:
             stock_text = f"All in cart ({in_cart}/{stock})"
             stock_color = "#D97706"
         elif already_in_cart:
-            # show remaining; flag if it's low
             if remaining <= low_level:
                 stock_text = f"Remaining: {remaining} (low)"
                 stock_color = "#D97706"
@@ -469,20 +357,16 @@ class POSView(ctk.CTkFrame):
                 stock_text = f"Remaining: {remaining}"
                 stock_color = SUCCESS
         elif stock <= low_level:
-            stock_text = f"Low: {stock}"
-            stock_color = "#D97706"
+            stock_text, stock_color = f"Low: {stock}", "#D97706"
         else:
-            stock_text = f"Stock: {stock}"
-            stock_color = SUCCESS
+            stock_text, stock_color = f"Stock: {stock}", SUCCESS
 
         stock_label = ctk.CTkLabel(meta, text=stock_text,
                                    font=font_bold(10),
                                    text_color=stock_color)
         stock_label.pack(side="left")
 
-        # ═════════════════════════════════════════
-        # Click action
-        # ═════════════════════════════════════════
+        # ---- Click action ----
         if out_of_stock:
             click_action = lambda prod=product: messagebox.showwarning(
                 "Out of Stock",
@@ -512,8 +396,7 @@ class POSView(ctk.CTkFrame):
             click_action = lambda prod=product: self._add_to_cart(prod)
 
         widgets = [
-            card,
-            thumb_box, thumb_label,
+            card, thumb_box, thumb_label,
             info, name_label,
             meta, code_label, sep1, price_label, sep2, stock_label,
         ]
@@ -529,33 +412,21 @@ class POSView(ctk.CTkFrame):
             except Exception:
                 pass
 
-    # ─────────────────────────────────────────────
-    # SHAKE ANIMATION
-    # ─────────────────────────────────────────────
-
     def _shake_card(self, product_id):
-        """Brief left-right jiggle on the given product card."""
         card = self._cards.get(product_id)
         if card is None:
             return
-
-        # 6 alternating offsets: 0 → +6 → -6 → +4 → -4 → 0
         offsets = [6, -6, 4, -4, 2, 0]
-        delay = 40   # ms between steps
+        delay = 40
 
         def step(i):
             if i >= len(offsets):
                 card.pack_configure(padx=0)
                 return
-            offset = offsets[i]
-            card.pack_configure(padx=offset)
+            card.pack_configure(padx=offsets[i])
             card.after(delay, lambda: step(i + 1))
 
         step(0)
-
-    # ─────────────────────────────────────────────
-    # THUMBNAIL LOADER
-    # ─────────────────────────────────────────────
 
     def _load_thumbnail(self, image_path, size=(56, 56)):
         if not image_path or not os.path.exists(image_path):
@@ -566,25 +437,18 @@ class POSView(ctk.CTkFrame):
         except Exception:
             return None
 
-    # ─────────────────────────────────────────────
-    # CART
-    # ─────────────────────────────────────────────
-
+    # ---- Cart ----
     def _add_to_cart(self, product):
         stock = product["stock_qty"]
-
         if stock <= 0:
             messagebox.showwarning(
                 "Out of Stock",
                 f"{self._display_name(product)} is out of stock."
             )
             return
-
         if self._get_cart_quantity(product["product_id"]) > 0:
-            # Shouldn't reach here (guarded in click_action), but be safe
             self._shake_card(product["product_id"])
             return
-
         self.controller.add_to_cart(product, qty=1)
         self._refresh_cart()
 
@@ -613,78 +477,61 @@ class POSView(ctk.CTkFrame):
             w.destroy()
 
         if not self.controller.cart:
-            ctk.CTkLabel(self.cart_frame,
-                         text="Cart is empty",
-                         font=font(11),
-                         text_color=FG_MUTED).pack(pady=30)
+            ctk.CTkLabel(self.cart_frame, text="Cart is empty",
+                         font=font(11), text_color=FG_MUTED).pack(pady=30)
             self.total_label.configure(text="₱0.00")
             self._render_products()
             return
 
-        # ---- Build a stock lookup so we can clamp quantities ----
         stock_by_id = {p["product_id"]: p["stock_qty"] for p in self.products}
 
         for i, item in enumerate(self.controller.cart):
             bg = BG_ROW_ALT if i % 2 else "transparent"
-
             row = ctk.CTkFrame(self.cart_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=2)
 
-            # ---- Item name (brand + name + size) ----
             display = " ".join(
                 part for part in (item.get("brand"), item["name"], item.get("size"))
                 if part
             )
-            ctk.CTkLabel(row, text=display,
-                         anchor="w",
+            ctk.CTkLabel(row, text=display, anchor="w",
                          font=font_bold(11),
                          text_color=FG_PRIMARY).pack(side="left", padx=(8, 4), pady=6)
 
-            # ---- Remove (✕) ----
             ctk.CTkButton(row, text="✕", width=28, height=28,
-                          corner_radius=6,
-                          font=font(11),
+                          corner_radius=6, font=font(11),
                           fg_color=DANGER, hover_color=DANGER_HOVER,
                           command=lambda pid=item["product_id"]: self._remove(pid)
                           ).pack(side="right", padx=(4, 8), pady=4)
 
-            # ---- Subtotal ----
             ctk.CTkLabel(row, text=f"₱{item['price'] * item['quantity']:.2f}",
                          font=font_bold(11),
                          text_color=ACCENT).pack(side="right", padx=(4, 6))
 
-            # ---- Qty stepper: [−] [entry] [+] ----
             stepper = ctk.CTkFrame(row, fg_color="transparent")
             stepper.pack(side="right", padx=4)
 
             max_qty = stock_by_id.get(item["product_id"], item["quantity"])
 
             ctk.CTkButton(stepper, text="−", width=26, height=26,
-                          corner_radius=6,
-                          font=font_bold(14),
+                          corner_radius=6, font=font_bold(14),
                           fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
                           text_color=NEUTRAL_TEXT,
-                          command=lambda pid=item["product_id"]:
-                              self._decrease(pid)
+                          command=lambda pid=item["product_id"]: self._decrease(pid)
                           ).pack(side="left")
 
             qty_var = ctk.StringVar(value=str(item["quantity"]))
-            qty_e = ctk.CTkEntry(stepper,
-                                 textvariable=qty_var,
-                                 width=44, height=26,
-                                 corner_radius=6,
+            qty_e = ctk.CTkEntry(stepper, textvariable=qty_var,
+                                 width=44, height=26, corner_radius=6,
                                  font=font(12),
-                                 fg_color=BG_INPUT,
-                                 border_color=BORDER,
-                                 border_width=1,
-                                 justify="center")
+                                 fg_color=BG_INPUT, border_color=BORDER,
+                                 border_width=1, justify="center")
             qty_e.pack(side="left", padx=2)
 
             def commit(pid=item["product_id"], var=qty_var, mx=max_qty):
                 try:
                     val = int(var.get())
                 except ValueError:
-                    # revert to current value
                     cur = self.controller.get_quantity(pid)
                     var.set(str(cur))
                     return
@@ -694,8 +541,7 @@ class POSView(ctk.CTkFrame):
             qty_e.bind("<FocusOut>", lambda e: commit())
 
             ctk.CTkButton(stepper, text="+", width=26, height=26,
-                          corner_radius=6,
-                          font=font_bold(14),
+                          corner_radius=6, font=font_bold(14),
                           fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
                           text_color=NEUTRAL_TEXT,
                           command=lambda pid=item["product_id"], mx=max_qty:
@@ -705,16 +551,12 @@ class POSView(ctk.CTkFrame):
         self.total_label.configure(text=f"₱{self.controller.get_total():.2f}")
         self._render_products()
 
-    # ─────────────────────────────────────────────
-    # CHECKOUT (with confirmation dialog)
-    # ─────────────────────────────────────────────
-
     def _checkout(self):
         if not self.controller.cart:
-            messagebox.showwarning("Empty Cart", "Add products before checking out.")
+            messagebox.showwarning("Empty Cart",
+                                   "Add products before checking out.")
             return
 
-        # ---- Re-validate stock for every cart item ----
         fresh_products = {
             p["product_id"]: p for p in InventoryController.list_products()
         }
@@ -726,7 +568,7 @@ class POSView(ctk.CTkFrame):
             elif item["quantity"] > fresh["stock_qty"]:
                 problems.append(
                     f"• {item['name']}: you have {item['quantity']} in cart "
-                    f"but only {fresh['stock_qty']} in stock."
+                    f"but only {fresh['stock_qty']} sellable in stock."
                 )
 
         if problems:
@@ -742,7 +584,6 @@ class POSView(ctk.CTkFrame):
             self._render_products()
             return
 
-        # ---- Payment handling ----
         method = self.payment_var.get()
         gcash_reference = None
 
@@ -776,13 +617,9 @@ class POSView(ctk.CTkFrame):
 
         confirm = CheckoutConfirmDialog(
             self.winfo_toplevel(),
-            total=total,
-            amount_paid=paid,
-            payment_method=method,
-            change=change,
-            gcash_reference=gcash_reference,
+            total=total, amount_paid=paid, payment_method=method,
+            change=change, gcash_reference=gcash_reference,
         )
-
         if not confirm.confirmed:
             return
 
@@ -815,7 +652,7 @@ class POSView(ctk.CTkFrame):
 
 
 # ─────────────────────────────────────────────
-# CHECKOUT CONFIRMATION DIALOG
+# CHECKOUT DIALOG
 # ─────────────────────────────────────────────
 
 class CheckoutConfirmDialog(ctk.CTkToplevel):
@@ -829,7 +666,6 @@ class CheckoutConfirmDialog(ctk.CTkToplevel):
         self.payment_method = payment_method
         self.change = change
         self.gcash_reference = gcash_reference
-
         self.confirmed = False
 
         self.title("Confirm Checkout")
@@ -848,40 +684,36 @@ class CheckoutConfirmDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self, text="Confirm Checkout",
                      font=font_bold(18),
                      text_color=FG_PRIMARY).pack(pady=(20, 4))
-
-        ctk.CTkLabel(self, text="Please review the transaction before confirming",
+        ctk.CTkLabel(self,
+                     text="Please review the transaction before confirming",
                      font=font(11),
                      text_color=FG_SECONDARY).pack(pady=(0, 14))
 
         card = ctk.CTkFrame(self, fg_color=BG_CARD,
-                            corner_radius=12,
-                            border_width=1,
+                            corner_radius=12, border_width=1,
                             border_color=BORDER)
         card.pack(fill="x", padx=24, pady=(0, 10))
 
         rows = [
-            ("Total",           f"₱{self.total:.2f}",        ACCENT),
-            ("Payment Method",  self.payment_method,         FG_PRIMARY),
+            ("Total",          f"₱{self.total:.2f}",        ACCENT),
+            ("Payment Method", self.payment_method,         FG_PRIMARY),
         ]
         if self.payment_method == "GCash" and self.gcash_reference:
             rows.append(("GCash Reference", self.gcash_reference, FG_PRIMARY))
         rows += [
-            ("Amount Paid",     f"₱{self.amount_paid:.2f}", FG_PRIMARY),
-            ("Change",          f"₱{self.change:.2f}",       BRAND_GREEN),
+            ("Amount Paid", f"₱{self.amount_paid:.2f}", FG_PRIMARY),
+            ("Change",      f"₱{self.change:.2f}",       BRAND_GREEN),
         ]
+
         for i, (label, value, color) in enumerate(rows):
             if i > 0:
                 ctk.CTkFrame(card, height=1, fg_color=BORDER).pack(
                     fill="x", padx=14)
-
             row = ctk.CTkFrame(card, fg_color="transparent")
             row.pack(fill="x", padx=14, pady=10)
-
-            ctk.CTkLabel(row, text=label,
-                         font=font_bold(11),
+            ctk.CTkLabel(row, text=label, font=font_bold(11),
                          text_color=FG_SECONDARY,
                          anchor="w").pack(side="left")
-
             ctk.CTkLabel(row, text=value, anchor="e",
                          font=font_bold(13),
                          text_color=color).pack(side="right")
@@ -890,15 +722,13 @@ class CheckoutConfirmDialog(ctk.CTkToplevel):
         btn_row.pack(pady=20)
 
         ctk.CTkButton(btn_row, text="Cancel", width=140, height=42,
-                      corner_radius=8,
-                      font=font_bold(13),
+                      corner_radius=8, font=font_bold(13),
                       fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
                       text_color=NEUTRAL_TEXT,
                       command=self._cancel).pack(side="left", padx=6)
 
         ctk.CTkButton(btn_row, text="Confirm", width=160, height=42,
-                      corner_radius=8,
-                      font=font_bold(13),
+                      corner_radius=8, font=font_bold(13),
                       fg_color=BRAND_GREEN, hover_color="#1E9040",
                       command=self._confirm).pack(side="left", padx=6)
 

@@ -1,15 +1,15 @@
 # ─────────────────────────────────────────────
-# DATABASE SETUP (SQLite — strict one-to-many)
+# DATABASE SETUP (SQLite — batch-tracked inventory)
 # ─────────────────────────────────────────────
 #
-# Relationship map (no many-to-many, no hanging tables):
+# Relationship map:
 #
 #   users ──< transactions ──< transaction_items >── products
 #   users ──< purchases    ──< purchase_items    >── products
 #   users ──< activity_logs
 #   supplier_categories ──< suppliers ──< products
 #   categories          ──< products
-#   products            ──< inventory
+#   products            ──< batches              ← NEW (replaces inventory)
 #
 # Root tables: users, categories, supplier_categories
 
@@ -98,7 +98,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 5. products ----
+    # ---- 5. products (no stock, no expiration — those live in batches) ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS products (
             product_id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,7 +110,6 @@ def initialize_database():
             cost_price      REAL DEFAULT 0,
             price           REAL NOT NULL,
             low_stock_level INTEGER DEFAULT 10,
-            expiration_date TEXT,
             image_path      TEXT,
             is_archived     INTEGER DEFAULT 0,
             supplier_id     INTEGER NOT NULL,
@@ -122,14 +121,23 @@ def initialize_database():
         )
     """)
 
-    # ---- 6. inventory ----
+    # ---- 6. batches (replaces `inventory`) ----
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS inventory (
-            inventory_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            product_id   INTEGER NOT NULL,
-            stock_qty    INTEGER NOT NULL DEFAULT 0,
-            updated_at   TEXT NOT NULL,
-            FOREIGN KEY (product_id) REFERENCES products(product_id)
+        CREATE TABLE IF NOT EXISTS batches (
+            batch_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id      INTEGER NOT NULL,
+            batch_no        TEXT NOT NULL,
+            quantity        INTEGER NOT NULL DEFAULT 0,
+            cost_price      REAL DEFAULT 0,
+            expiration_date TEXT,
+            supplier_id     INTEGER,
+            purchase_id     INTEGER,
+            is_archived     INTEGER DEFAULT 0,
+            received_at     TEXT NOT NULL,
+            created_at      TEXT NOT NULL,
+            FOREIGN KEY (product_id)  REFERENCES products(product_id),
+            FOREIGN KEY (supplier_id) REFERENCES suppliers(supplier_id),
+            FOREIGN KEY (purchase_id) REFERENCES purchases(purchase_id)
         )
     """)
 
@@ -148,17 +156,20 @@ def initialize_database():
         )
     """)
 
-    # ---- 8. transaction_items ----
+    # ---- 8. transaction_items (records which batch a sale came from) ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS transaction_items (
             item_id         INTEGER PRIMARY KEY AUTOINCREMENT,
             transaction_id  INTEGER NOT NULL,
             product_id      INTEGER NOT NULL,
+            batch_id        INTEGER,
             quantity        INTEGER NOT NULL,
             price           REAL NOT NULL,
+            cost_price      REAL DEFAULT 0,
             subtotal        REAL NOT NULL,
             FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id),
-            FOREIGN KEY (product_id)     REFERENCES products(product_id)
+            FOREIGN KEY (product_id)     REFERENCES products(product_id),
+            FOREIGN KEY (batch_id)       REFERENCES batches(batch_id)
         )
     """)
 
@@ -179,14 +190,15 @@ def initialize_database():
         )
     """)
 
-    # ---- 10. purchase_items ----
+    # ---- 10. purchase_items (each line can carry an expiration date) ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS purchase_items (
-            pitem_id     INTEGER PRIMARY KEY AUTOINCREMENT,
-            purchase_id  INTEGER NOT NULL,
-            product_id   INTEGER NOT NULL,
-            quantity     INTEGER NOT NULL,
-            cost         REAL NOT NULL,
+            pitem_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            purchase_id     INTEGER NOT NULL,
+            product_id      INTEGER NOT NULL,
+            quantity        INTEGER NOT NULL,
+            cost            REAL NOT NULL,
+            expiration_date TEXT,
             FOREIGN KEY (purchase_id) REFERENCES purchases(purchase_id),
             FOREIGN KEY (product_id)  REFERENCES products(product_id)
         )
@@ -205,157 +217,46 @@ def initialize_database():
     """)
 
     conn.commit()
-
-    _run_migrations(cur, conn)
-    _seed_default_admin(cur, conn)
-    _seed_default_supplier_category(cur, conn)
-
     conn.close()
 
-
-# ─────────────────────────────────────────────
-# MIGRATIONS
-# ─────────────────────────────────────────────
-
-def _run_migrations(cur, conn):
-    """Add new columns to existing DBs without data loss."""
-    migrations = [
-        # ---- suppliers ----
-        ("ALTER TABLE suppliers ADD COLUMN supplier_category_id INTEGER",
-         "suppliers.supplier_category_id"),
-        ("ALTER TABLE suppliers ADD COLUMN is_archived INTEGER DEFAULT 0",
-         "suppliers.is_archived"),
-
-        # ---- products ----
-        ("ALTER TABLE products ADD COLUMN product_code TEXT",
-         "products.product_code"),
-        ("ALTER TABLE products ADD COLUMN image_path TEXT",
-         "products.image_path"),
-        ("ALTER TABLE products ADD COLUMN is_archived INTEGER DEFAULT 0",
-         "products.is_archived"),
-
-        # ---- products (new attributes) ----
-        ("ALTER TABLE products ADD COLUMN brand TEXT",
-         "products.brand"),
-        ("ALTER TABLE products ADD COLUMN size TEXT",
-         "products.size"),
-        ("ALTER TABLE products ADD COLUMN unit TEXT DEFAULT 'pc'",
-         "products.unit"),
-        ("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0",
-         "products.cost_price"),
-        ("ALTER TABLE products ADD COLUMN expiration_date TEXT",
-         "products.expiration_date"),
-        ("ALTER TABLE products ADD COLUMN updated_at TEXT",
-         "products.updated_at"),
-
-        # ---- purchases ----
-        ("ALTER TABLE purchases ADD COLUMN status TEXT DEFAULT 'Ordered'",
-         "purchases.status"),
-        ("ALTER TABLE purchases ADD COLUMN notes TEXT",
-         "purchases.notes"),
-        ("ALTER TABLE purchases ADD COLUMN received_at TEXT",
-         "purchases.received_at"),
-
-        # ---- transactions ----
-        ("ALTER TABLE transactions ADD COLUMN gcash_reference TEXT",
-         "transactions.gcash_reference"),
-
-        # ---- users (split full_name → first / middle / last) ----
-        ("ALTER TABLE users ADD COLUMN first_name TEXT",  "users.first_name"),
-        ("ALTER TABLE users ADD COLUMN middle_name TEXT", "users.middle_name"),
-        ("ALTER TABLE users ADD COLUMN last_name TEXT",   "users.last_name"),
-    ]
-    for sql, name in migrations:
-        try:
-            cur.execute(sql)
-            conn.commit()
-            print(f"[DB] Migration applied: {name}")
-        except sqlite3.OperationalError:
-            pass
-
-    # ═════════════════════════════════════════
-    # MIGRATE products.stock_qty → inventory
-    # ═════════════════════════════════════════
-    try:
-        cols = [r[1] for r in cur.execute("PRAGMA table_info(products)")]
-        if "stock_qty" in cols:
-            cur.execute("""
-                INSERT INTO inventory (product_id, stock_qty, updated_at)
-                SELECT p.product_id,
-                       COALESCE(p.stock_qty, 0),
-                       ?
-                FROM products p
-                WHERE p.product_id NOT IN (
-                    SELECT product_id FROM inventory
-                )
-            """, (now_local(),))
-            conn.commit()
-            print("[DB] Migrated products.stock_qty → inventory table")
-    except Exception as e:
-        print(f"[DB] Migration note: {e}")
-
-    # ═════════════════════════════════════════
-    # MIGRATE users.full_name → first/middle/last
-    # ═════════════════════════════════════════
-    try:
-        cols = [r[1] for r in cur.execute("PRAGMA table_info(users)")]
-        if "full_name" in cols:
-            cur.execute("""
-                SELECT user_id, full_name
-                FROM users
-                WHERE first_name IS NULL
-                   OR last_name IS NULL
-            """)
-            rows = cur.fetchall()
-
-            migrated = 0
-            for row in rows:
-                parts = (row["full_name"] or "").strip().split()
-                if not parts:
-                    continue
-
-                first = parts[0]
-                last = parts[-1] if len(parts) > 1 else parts[0]
-                middle = " ".join(parts[1:-1]) if len(parts) > 2 else None
-
-                cur.execute("""
-                    UPDATE users
-                    SET first_name = ?, middle_name = ?, last_name = ?
-                    WHERE user_id = ?
-                """, (first, middle, last, row["user_id"]))
-                migrated += 1
-
-            conn.commit()
-            if migrated:
-                print(f"[DB] Migrated {migrated} user(s) full_name → first/middle/last")
-    except Exception as e:
-        print(f"[DB] Migration note (users): {e}")
+    _seed_default_admin()
+    _seed_default_supplier_category()
 
 
 # ─────────────────────────────────────────────
 # SEED DATA
 # ─────────────────────────────────────────────
 
-def _seed_default_admin(cur, conn):
-    cur.execute("SELECT COUNT(*) AS c FROM users")
-    if cur.fetchone()["c"] == 0:
-        cur.execute("""
-            INSERT INTO users
-                (username, password, first_name, middle_name, last_name,
-                 role, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, ("admin", "admin123", "Store", None, "Owner",
-              ROLE_ADMIN, now_local()))
-        conn.commit()
-        print("[DB] Default admin created -> username: admin | password: admin123")
+def _seed_default_admin():
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS c FROM users")
+        if cur.fetchone()["c"] == 0:
+            cur.execute("""
+                INSERT INTO users
+                    (username, password, first_name, middle_name, last_name,
+                     role, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, ("admin", "admin123", "Store", None, "Owner",
+                  ROLE_ADMIN, now_local()))
+            conn.commit()
+            print("[DB] Default admin created -> username: admin | password: admin123")
+    finally:
+        conn.close()
 
 
-def _seed_default_supplier_category(cur, conn):
-    cur.execute("SELECT COUNT(*) AS c FROM supplier_categories")
-    if cur.fetchone()["c"] == 0:
-        cur.execute("""
-            INSERT INTO supplier_categories (name, description, created_at)
-            VALUES (?, ?, ?)
-        """, ("General", "Default supplier category", now_local()))
-        conn.commit()
-        print("[DB] Default supplier category created: General")
+def _seed_default_supplier_category():
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS c FROM supplier_categories")
+        if cur.fetchone()["c"] == 0:
+            cur.execute("""
+                INSERT INTO supplier_categories (name, description, created_at)
+                VALUES (?, ?, ?)
+            """, ("General", "Default supplier category", now_local()))
+            conn.commit()
+            print("[DB] Default supplier category created: General")
+    finally:
+        conn.close()

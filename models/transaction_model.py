@@ -3,7 +3,26 @@
 # ─────────────────────────────────────────────
 
 from database import get_connection, now_local
-from models.product_model import deduct_stock_cur
+from models.batch_model import deduct_fefo_cur
+
+
+# ─────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────
+
+def _full_name_sql(alias="u"):
+    """
+    Return a SQL fragment that builds a display name from
+    first_name / middle_name / last_name, matching
+    user_model._build_full_name() behavior.
+    """
+    return (
+        f"TRIM("
+        f"COALESCE({alias}.first_name, '') || ' ' || "
+        f"COALESCE({alias}.middle_name || ' ', '') || "
+        f"COALESCE({alias}.last_name, '')"
+        f") AS full_name"
+    )
 
 
 # ─────────────────────────────────────────────
@@ -12,10 +31,6 @@ from models.product_model import deduct_stock_cur
 
 def create_transaction(user_id, cart, payment_method, amount_paid,
                        gcash_reference=None):
-    """
-    cart = list of dicts: {product_id, name, price, quantity}
-    Returns (success, transaction_id_or_error, change)
-    """
     total = sum(item["price"] * item["quantity"] for item in cart)
 
     if payment_method == "Cash" and amount_paid < total:
@@ -27,7 +42,6 @@ def create_transaction(user_id, cart, payment_method, amount_paid,
     try:
         cur = conn.cursor()
 
-        # ---- Insert transaction header ----
         cur.execute("""
             INSERT INTO transactions
                 (user_id, total, payment_method, amount_paid,
@@ -37,16 +51,16 @@ def create_transaction(user_id, cart, payment_method, amount_paid,
               change, gcash_reference, now_local()))
         txn_id = cur.lastrowid
 
-        # ---- Insert each item + deduct stock (same connection) ----
         for item in cart:
-            subtotal = item["price"] * item["quantity"]
-            cur.execute("""
-                INSERT INTO transaction_items
-                    (transaction_id, product_id, quantity, price, subtotal)
-                VALUES (?, ?, ?, ?, ?)
-            """, (txn_id, item["product_id"], item["quantity"],
-                  item["price"], subtotal))
-            deduct_stock_cur(cur, item["product_id"], item["quantity"])
+            ok, msg, _cost = deduct_fefo_cur(
+                cur,
+                product_id=item["product_id"],
+                quantity=item["quantity"],
+                transaction_id=txn_id,
+            )
+            if not ok:
+                conn.rollback()
+                return False, f"{item['name']}: {msg}", 0
 
         conn.commit()
         return True, txn_id, change
@@ -76,8 +90,8 @@ def get_sales_today():
 
 def get_sales_between(start_date, end_date):
     conn = get_connection()
-    rows = conn.execute("""
-        SELECT t.*, u.username, u.full_name
+    rows = conn.execute(f"""
+        SELECT t.*, u.username, {_full_name_sql('u')}
         FROM transactions t
         JOIN users u ON t.user_id = u.user_id
         WHERE DATE(t.created_at) BETWEEN ? AND ?
@@ -101,22 +115,15 @@ def get_transaction_items(transaction_id):
 
 
 # ─────────────────────────────────────────────
-# READ — FILTERED (for reports)
+# READ — FILTERED
 # ─────────────────────────────────────────────
 
 def get_transactions_filtered(date_from=None, date_to=None,
                               search=None, payment_method=None):
-    """
-    Return transactions filtered by:
-      - date range (YYYY-MM-DD)
-      - search term (txn#, cashier, payment method, product name)
-      - payment method ('Cash' or 'GCash')
-    Each row includes cashier name and item count.
-    """
     conn = get_connection()
-    sql = """
+    sql = f"""
         SELECT t.*,
-               u.username, u.full_name,
+               u.username, {_full_name_sql('u')},
                (SELECT COUNT(*) FROM transaction_items ti
                 WHERE ti.transaction_id = t.transaction_id) AS item_count
         FROM transactions t
@@ -139,7 +146,9 @@ def get_transactions_filtered(date_from=None, date_to=None,
         sql += """ AND (
             CAST(t.transaction_id AS TEXT) LIKE ?
             OR LOWER(u.username) LIKE ?
-            OR LOWER(u.full_name) LIKE ?
+            OR LOWER(COALESCE(u.first_name,'') || ' ' ||
+                     COALESCE(u.middle_name,'') || ' ' ||
+                     COALESCE(u.last_name,'')) LIKE ?
             OR LOWER(t.payment_method) LIKE ?
             OR EXISTS (
                 SELECT 1 FROM transaction_items ti
@@ -158,11 +167,6 @@ def get_transactions_filtered(date_from=None, date_to=None,
 
 
 def get_sales_summary(date_from=None, date_to=None):
-    """
-    Return totals for a date range:
-      - total_sales, count
-      - cash_total, gcash_total
-    """
     conn = get_connection()
     sql = """
         SELECT
@@ -189,14 +193,10 @@ def get_sales_summary(date_from=None, date_to=None):
 
 
 # ─────────────────────────────────────────────
-# READ — ITEMS SUMMARY (for report list)
+# READ — ITEMS SUMMARY
 # ─────────────────────────────────────────────
 
 def get_items_summary_for_transaction(transaction_id):
-    """
-    Return a compact 'Name ×Qty @ ₱Price' string for a transaction.
-    Example: 'Coke ×2 @ ₱85.00, Piattos ×1 @ ₱25.00'
-    """
     conn = get_connection()
     rows = conn.execute("""
         SELECT ti.quantity, ti.price, p.name
@@ -214,23 +214,17 @@ def get_items_summary_for_transaction(transaction_id):
              for r in rows]
     return ", ".join(parts)
 
+
 # ─────────────────────────────────────────────
-# DASHBOARD QUERIES
+# DASHBOARD
 # ─────────────────────────────────────────────
 
 def get_dashboard_stats(date_str=None):
-    """
-    Return a dict of key metrics for the dashboard:
-      - total_sales_today, txn_count_today
-      - cash_today, gcash_today
-      - total_sales_alltime, txn_count_alltime
-    """
     if date_str is None:
         date_str = now_local()[:10]
 
     conn = get_connection()
 
-    # ---- Today's numbers ----
     today_row = conn.execute("""
         SELECT
             COALESCE(SUM(total), 0) AS sales,
@@ -243,7 +237,6 @@ def get_dashboard_stats(date_str=None):
         WHERE DATE(created_at) = ?
     """, (date_str,)).fetchone()
 
-    # ---- All-time numbers ----
     alltime_row = conn.execute("""
         SELECT
             COALESCE(SUM(total), 0) AS sales,
@@ -262,27 +255,24 @@ def get_dashboard_stats(date_str=None):
         "txn_count_alltime":   alltime_row["count"],
     }
 
+
 # ─────────────────────────────────────────────
-# READ — TOP SELLING PRODUCTS (for Reports)
+# TOP SELLING PRODUCTS
 # ─────────────────────────────────────────────
 
 def get_top_selling_products(date_from=None, date_to=None,
                              search=None, payment_method=None, limit=5):
-    """
-    Return top-selling products with aggregated stats:
-      - product_name, product_code
-      - units_sold (total quantity)
-      - transaction_count (distinct transactions)
-      - revenue (total subtotal)
-    """
     conn = get_connection()
     sql = """
         SELECT
-            p.name  AS product_name,
-            p.product_code AS product_code,
-            COALESCE(SUM(ti.quantity), 0)      AS units_sold,
-            COUNT(DISTINCT ti.transaction_id)  AS transaction_count,
-            COALESCE(SUM(ti.subtotal), 0)      AS revenue
+            p.name            AS product_name,
+            p.brand           AS brand,
+            p.size            AS size,
+            p.product_code    AS product_code,
+            COALESCE(SUM(ti.quantity), 0)                 AS units_sold,
+            COUNT(DISTINCT ti.transaction_id)             AS transaction_count,
+            COALESCE(SUM(ti.subtotal), 0)                 AS revenue,
+            COALESCE(SUM(ti.cost_price * ti.quantity), 0) AS total_cost
         FROM transaction_items ti
         JOIN products     p ON ti.product_id     = p.product_id
         JOIN transactions t ON ti.transaction_id = t.transaction_id
@@ -305,7 +295,7 @@ def get_top_selling_products(date_from=None, date_to=None,
         params.append(q)
 
     sql += """
-        GROUP BY p.product_id, p.name, p.product_code
+        GROUP BY p.product_id, p.name, p.brand, p.size, p.product_code
         ORDER BY units_sold DESC
         LIMIT ?
     """
@@ -313,4 +303,23 @@ def get_top_selling_products(date_from=None, date_to=None,
 
     rows = conn.execute(sql, params).fetchall()
     conn.close()
-    return rows
+
+    # ---- Compute averages + profit in Python ----
+    result = []
+    for r in rows:
+        d = dict(r)
+        units = d["units_sold"] or 0
+        revenue = d["revenue"] or 0
+        total_cost = d["total_cost"] or 0
+
+        if units > 0:
+            d["avg_price"] = revenue / units
+            d["avg_cost"]  = total_cost / units
+        else:
+            d["avg_price"] = 0
+            d["avg_cost"]  = 0
+
+        d["profit"] = revenue - total_cost
+        result.append(d)
+
+    return result

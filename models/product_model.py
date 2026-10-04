@@ -3,6 +3,9 @@
 # ─────────────────────────────────────────────
 
 from database import get_connection, now_local
+from models.batch_model import (
+    create_batch_cur, get_total_stock, get_earliest_expiration,
+)
 
 
 # ─────────────────────────────────────────────
@@ -16,6 +19,55 @@ def _generate_product_code(cur):
 
 
 # ─────────────────────────────────────────────
+# STOCK AGGREGATION HELPERS
+# ─────────────────────────────────────────────
+
+def _attach_stock(rows):
+    """
+    Given a list of product rows, add `stock_qty` and `earliest_expiration`
+    keys by aggregating from the batches table.
+    Returns the same list of dicts (sqlite3.Row isn't mutable).
+    """
+    if not rows:
+        return []
+
+    result = []
+    today = now_local()[:10]
+
+    conn = get_connection()
+    for row in rows:
+        d = dict(row)
+
+        # ---- Sum non-expired quantity ----
+        agg = conn.execute("""
+            SELECT
+                COALESCE(SUM(quantity), 0) AS stock_qty
+            FROM batches
+            WHERE product_id = ?
+              AND is_archived = 0
+              AND (expiration_date IS NULL OR expiration_date >= ?)
+        """, (d["product_id"], today)).fetchone()
+
+        # ---- Earliest non-expired expiration ----
+        earliest = conn.execute("""
+            SELECT MIN(expiration_date) AS earliest
+            FROM batches
+            WHERE product_id = ?
+              AND is_archived = 0
+              AND quantity > 0
+              AND expiration_date IS NOT NULL
+              AND expiration_date >= ?
+        """, (d["product_id"], today)).fetchone()
+
+        d["stock_qty"] = agg["stock_qty"]
+        d["earliest_expiration"] = earliest["earliest"] if earliest else None
+        result.append(d)
+
+    conn.close()
+    return result
+
+
+# ─────────────────────────────────────────────
 # READ
 # ─────────────────────────────────────────────
 
@@ -24,12 +76,10 @@ def get_all_products(include_archived=False):
     sql = """
         SELECT p.*,
                s.name AS supplier_name,
-               c.name AS category_name,
-               COALESCE(i.stock_qty, 0) AS stock_qty
+               c.name AS category_name
         FROM products p
         JOIN suppliers  s ON p.supplier_id = s.supplier_id
         JOIN categories c ON p.category_id = c.category_id
-        LEFT JOIN inventory i ON p.product_id = i.product_id
     """
     if not include_archived:
         sql += " WHERE p.is_archived = 0"
@@ -37,7 +87,7 @@ def get_all_products(include_archived=False):
 
     rows = conn.execute(sql).fetchall()
     conn.close()
-    return rows
+    return _attach_stock(rows)
 
 
 def get_products_by_category(category_id, include_archived=False):
@@ -45,12 +95,10 @@ def get_products_by_category(category_id, include_archived=False):
     sql = """
         SELECT p.*,
                s.name AS supplier_name,
-               c.name AS category_name,
-               COALESCE(i.stock_qty, 0) AS stock_qty
+               c.name AS category_name
         FROM products p
         JOIN suppliers  s ON p.supplier_id = s.supplier_id
         JOIN categories c ON p.category_id = c.category_id
-        LEFT JOIN inventory i ON p.product_id = i.product_id
         WHERE 1=1
     """
     params = []
@@ -63,53 +111,52 @@ def get_products_by_category(category_id, include_archived=False):
 
     rows = conn.execute(sql, params).fetchall()
     conn.close()
-    return rows
+    return _attach_stock(rows)
 
 
 def get_product(product_id):
     conn = get_connection()
     row = conn.execute("""
         SELECT p.*,
-               COALESCE(i.stock_qty, 0) AS stock_qty
-        FROM products p
-        LEFT JOIN inventory i ON p.product_id = i.product_id
-        WHERE p.product_id = ?
-    """, (product_id,)).fetchone()
-    conn.close()
-    return row
-
-
-def get_low_stock_products():
-    conn = get_connection()
-    rows = conn.execute("""
-        SELECT p.*,
                s.name AS supplier_name,
-               c.name AS category_name,
-               COALESCE(i.stock_qty, 0) AS stock_qty
+               c.name AS category_name
         FROM products p
         JOIN suppliers  s ON p.supplier_id = s.supplier_id
         JOIN categories c ON p.category_id = c.category_id
-        LEFT JOIN inventory i ON p.product_id = i.product_id
-        WHERE COALESCE(i.stock_qty, 0) <= p.low_stock_level
-          AND p.is_archived = 0
-        ORDER BY i.stock_qty
-    """).fetchall()
+        WHERE p.product_id = ?
+    """, (product_id,)).fetchone()
     conn.close()
-    return rows
+
+    if row is None:
+        return None
+    return _attach_stock([row])[0]
+
+
+def get_low_stock_products():
+    """
+    Products whose total non-expired stock is <= low_stock_level.
+    """
+    all_products = get_all_products(include_archived=False)
+    return [
+        p for p in all_products
+        if p["stock_qty"] <= (p["low_stock_level"] or 0)
+    ]
 
 
 def get_products_by_supplier(supplier_id):
     conn = get_connection()
     rows = conn.execute("""
         SELECT p.*,
-               COALESCE(i.stock_qty, 0) AS stock_qty
+               s.name AS supplier_name,
+               c.name AS category_name
         FROM products p
-        LEFT JOIN inventory i ON p.product_id = i.product_id
+        JOIN suppliers  s ON p.supplier_id = s.supplier_id
+        JOIN categories c ON p.category_id = c.category_id
         WHERE p.supplier_id = ? AND p.is_archived = 0
         ORDER BY p.name
     """, (supplier_id,)).fetchall()
     conn.close()
-    return rows
+    return _attach_stock(rows)
 
 
 # ─────────────────────────────────────────────
@@ -120,31 +167,45 @@ def add_product(name, price, stock_qty, low_stock_level,
                 supplier_id, category_id, image_path=None,
                 brand=None, size=None, unit="pc", cost_price=0.0,
                 expiration_date=None):
+    """
+    Create a product AND an initial batch for its starting stock.
+
+    Stock is never stored on products — it lives in `batches`.
+    """
     conn = get_connection()
     try:
         cur = conn.cursor()
         code = _generate_product_code(cur)
         now = now_local()
 
+        # ---- Insert product ----
         cur.execute("""
             INSERT INTO products
                 (product_code, name, brand, size, unit, cost_price, price,
-                 low_stock_level, expiration_date, supplier_id, category_id,
-                 image_path, is_archived, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                 low_stock_level, supplier_id, category_id, image_path,
+                 is_archived, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
         """, (code, name, brand, size, unit, cost_price, price,
-              low_stock_level, expiration_date, supplier_id, category_id,
-              image_path, now, now))
+              low_stock_level, supplier_id, category_id, image_path,
+              now, now))
         product_id = cur.lastrowid
 
-        cur.execute("""
-            INSERT INTO inventory (product_id, stock_qty, updated_at)
-            VALUES (?, ?, ?)
-        """, (product_id, stock_qty, now))
+        # ---- Create the initial batch (if any stock was given) ----
+        if stock_qty and stock_qty > 0:
+            create_batch_cur(
+                cur,
+                product_id=product_id,
+                quantity=stock_qty,
+                cost_price=cost_price or 0,
+                expiration_date=expiration_date or None,
+                supplier_id=supplier_id,
+                purchase_id=None,
+            )
 
         conn.commit()
         return True, f"Product added ({code})."
     except Exception as e:
+        conn.rollback()
         return False, str(e)
     finally:
         conn.close()
@@ -152,20 +213,22 @@ def add_product(name, price, stock_qty, low_stock_level,
 
 def update_product(product_id, name, price, low_stock_level,
                    supplier_id, category_id, image_path=None,
-                   brand=None, size=None, unit="pc", cost_price=0.0,
-                   expiration_date=None):
-    """Update product info only. Stock is handled separately by set_stock()."""
+                   brand=None, size=None, unit="pc", cost_price=0.0):
+    """
+    Update product info only. Stock lives in batches and is NOT touched here.
+    Use create_batch() to add stock, or RestockDialog.
+    """
     conn = get_connection()
     try:
         conn.execute("""
             UPDATE products
             SET name = ?, brand = ?, size = ?, unit = ?, cost_price = ?,
-                price = ?, low_stock_level = ?, expiration_date = ?,
+                price = ?, low_stock_level = ?,
                 supplier_id = ?, category_id = ?, image_path = ?,
                 updated_at = ?
             WHERE product_id = ?
         """, (name, brand, size, unit, cost_price,
-              price, low_stock_level, expiration_date,
+              price, low_stock_level,
               supplier_id, category_id, image_path,
               now_local(), product_id))
         conn.commit()
@@ -176,59 +239,50 @@ def update_product(product_id, name, price, low_stock_level,
         conn.close()
 
 
-def set_stock(product_id, stock_qty):
-    """Directly set the stock for a product. Creates the row if missing."""
+def restock_product(product_id, quantity, cost_price=None,
+                    expiration_date=None, supplier_id=None):
+    """
+    Add stock by creating a NEW batch.
+    Cost defaults to the product's current cost_price if not given.
+    """
+    if quantity <= 0:
+        return False, "Quantity must be positive."
+
     conn = get_connection()
     try:
         cur = conn.cursor()
 
-        cur.execute("""
-            UPDATE inventory
-            SET stock_qty = ?, updated_at = ?
-            WHERE product_id = ?
-        """, (stock_qty, now_local(), product_id))
+        # ---- Default cost from product if not provided ----
+        if cost_price is None:
+            row = cur.execute(
+                "SELECT cost_price, supplier_id FROM products WHERE product_id = ?",
+                (product_id,)
+            ).fetchone()
+            cost_price = row["cost_price"] if row else 0
+            if supplier_id is None:
+                supplier_id = row["supplier_id"] if row else None
 
-        if cur.rowcount == 0:
-            cur.execute("""
-                INSERT INTO inventory (product_id, stock_qty, updated_at)
-                VALUES (?, ?, ?)
-            """, (product_id, stock_qty, now_local()))
-
-        conn.commit()
-        return True, "Stock updated."
-    except Exception as e:
-        return False, str(e)
-    finally:
-        conn.close()
-
-
-def restock_product(product_id, quantity):
-    """Add to the existing stock."""
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            UPDATE inventory
-            SET stock_qty = stock_qty + ?, updated_at = ?
-            WHERE product_id = ?
-        """, (quantity, now_local(), product_id))
-
-        if cur.rowcount == 0:
-            cur.execute("""
-                INSERT INTO inventory (product_id, stock_qty, updated_at)
-                VALUES (?, ?, ?)
-            """, (product_id, quantity, now_local()))
+        create_batch_cur(
+            cur,
+            product_id=product_id,
+            quantity=quantity,
+            cost_price=cost_price or 0,
+            expiration_date=expiration_date or None,
+            supplier_id=supplier_id,
+            purchase_id=None,
+        )
 
         conn.commit()
         return True, f"Restocked +{quantity}."
     except Exception as e:
+        conn.rollback()
         return False, str(e)
     finally:
         conn.close()
 
 
 def update_cost_price(product_id, cost_price):
-    """Set the last-paid cost for a product (standalone; used outside txn)."""
+    """Standalone cost update (products.cost_price — used as a default)."""
     conn = get_connection()
     try:
         conn.execute("""
@@ -277,79 +331,6 @@ def unarchive_product(product_id):
 
 
 # ─────────────────────────────────────────────
-# STOCK ADJUSTERS (used by sales / purchases)
-# ─────────────────────────────────────────────
-
-def deduct_stock(product_id, qty):
-    conn = get_connection()
-    try:
-        conn.execute("""
-            UPDATE inventory
-            SET stock_qty = stock_qty - ?, updated_at = ?
-            WHERE product_id = ?
-        """, (qty, now_local(), product_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def add_stock(product_id, qty):
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            UPDATE inventory
-            SET stock_qty = stock_qty + ?, updated_at = ?
-            WHERE product_id = ?
-        """, (qty, now_local(), product_id))
-
-        if cur.rowcount == 0:
-            cur.execute("""
-                INSERT INTO inventory (product_id, stock_qty, updated_at)
-                VALUES (?, ?, ?)
-            """, (product_id, qty, now_local()))
-
-        conn.commit()
-    finally:
-        conn.close()
-
-
-# ─────────────────────────────────────────────
-# CURSOR-BASED (inside an open transaction)
-# ─────────────────────────────────────────────
-
-def deduct_stock_cur(cur, product_id, qty):
-    cur.execute("""
-        UPDATE inventory
-        SET stock_qty = stock_qty - ?, updated_at = ?
-        WHERE product_id = ?
-    """, (qty, now_local(), product_id))
-
-
-def add_stock_cur(cur, product_id, qty):
-    cur.execute("""
-        UPDATE inventory
-        SET stock_qty = stock_qty + ?, updated_at = ?
-        WHERE product_id = ?
-    """, (qty, now_local(), product_id))
-
-    if cur.rowcount == 0:
-        cur.execute("""
-            INSERT INTO inventory (product_id, stock_qty, updated_at)
-            VALUES (?, ?, ?)
-        """, (product_id, qty, now_local()))
-
-
-def set_cost_price_cur(cur, product_id, cost_price):
-    """Update cost_price inside an open transaction (used on PO receive)."""
-    cur.execute("""
-        UPDATE products
-        SET cost_price = ?, updated_at = ?
-        WHERE product_id = ?
-    """, (cost_price, now_local(), product_id))
-
-
-# ─────────────────────────────────────────────
 # DASHBOARD HELPERS
 # ─────────────────────────────────────────────
 
@@ -359,33 +340,16 @@ def get_product_counts():
       - total_products (non-archived)
       - low_stock_count
       - out_of_stock_count
+    Uses batch aggregation.
     """
-    conn = get_connection()
+    products = get_all_products(include_archived=False)
 
-    total = conn.execute("""
-        SELECT COUNT(*) AS c
-        FROM products
-        WHERE is_archived = 0
-    """).fetchone()["c"]
-
-    low = conn.execute("""
-        SELECT COUNT(*) AS c
-        FROM products p
-        LEFT JOIN inventory i ON p.product_id = i.product_id
-        WHERE p.is_archived = 0
-          AND COALESCE(i.stock_qty, 0) > 0
-          AND COALESCE(i.stock_qty, 0) <= p.low_stock_level
-    """).fetchone()["c"]
-
-    out = conn.execute("""
-        SELECT COUNT(*) AS c
-        FROM products p
-        LEFT JOIN inventory i ON p.product_id = i.product_id
-        WHERE p.is_archived = 0
-          AND COALESCE(i.stock_qty, 0) <= 0
-    """).fetchone()["c"]
-
-    conn.close()
+    total = len(products)
+    low = sum(
+        1 for p in products
+        if p["stock_qty"] > 0 and p["stock_qty"] <= (p["low_stock_level"] or 0)
+    )
+    out = sum(1 for p in products if p["stock_qty"] <= 0)
 
     return {
         "total_products":     total,

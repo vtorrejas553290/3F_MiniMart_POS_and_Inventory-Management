@@ -6,10 +6,14 @@ from models.product_model import (
     get_all_products, get_products_by_category,
     add_product, update_product, get_low_stock_products,
     restock_product, archive_product, unarchive_product,
-    get_products_by_supplier, set_stock,
+    get_products_by_supplier,
 )
 from models.category_model import (
-    get_all_categories, add_category, update_category
+    get_all_categories, add_category, update_category,
+)
+from models.batch_model import (
+    get_batches, get_expired_batches, get_expiring_soon_batches,
+    discard_batch, archive_batch, update_batch as _update_batch,
 )
 from models.activity_log_model import log_action
 
@@ -49,30 +53,28 @@ class InventoryController:
         return ok, msg
 
     @staticmethod
-    def update(user, product_id, name, price, stock, low,
+    def update(user, product_id, name, price, low,
                supplier_id, category_id, image_path=None,
-               brand=None, size=None, unit="pc",
-               cost_price=0.0, expiration_date=None):
-        # ---- Update product info ----
+               brand=None, size=None, unit="pc", cost_price=0.0):
         ok, msg = update_product(
             product_id, name, price, low, supplier_id, category_id,
-            image_path, brand, size, unit, cost_price, expiration_date,
+            image_path, brand, size, unit, cost_price,
         )
         if not ok:
             return ok, msg
-
-        # ---- Update inventory separately ----
-        ok2, msg2 = set_stock(product_id, stock)
-        if not ok2:
-            return False, msg2
 
         log_action(user["user_id"], "UPDATE_PRODUCT",
                    f"ID {product_id} - {name}")
         return True, "Product updated."
 
     @staticmethod
-    def restock(user, product_id, quantity):
-        ok, msg = restock_product(product_id, quantity)
+    def restock(user, product_id, quantity, cost_price=None,
+                expiration_date=None):
+        ok, msg = restock_product(
+            product_id, quantity,
+            cost_price=cost_price,
+            expiration_date=expiration_date,
+        )
         if ok:
             log_action(user["user_id"], "RESTOCK_PRODUCT",
                        f"ID {product_id} +{quantity}")
@@ -92,6 +94,48 @@ class InventoryController:
         if ok:
             log_action(user["user_id"], "UNARCHIVE_PRODUCT",
                        f"ID {product_id} - {name}")
+        return ok, msg
+
+    # ─────────────────────────────────────────────
+    # BATCHES
+    # ─────────────────────────────────────────────
+
+    @staticmethod
+    def list_batches(product_id, include_archived=False):
+        return get_batches(product_id, include_archived)
+
+    @staticmethod
+    def list_expired_batches(product_id=None):
+        return get_expired_batches(product_id)
+
+    @staticmethod
+    def list_expiring_soon(days=30, product_id=None):
+        return get_expiring_soon_batches(days=days, product_id=product_id)
+
+    @staticmethod
+    def discard_batch(user, batch_id, quantity=None):
+        ok, msg = discard_batch(batch_id, quantity)
+        if ok:
+            log_action(user["user_id"], "DISCARD_BATCH",
+                       f"batch_id={batch_id} qty={quantity or 'all'}")
+        return ok, msg
+
+    @staticmethod
+    def update_batch(user, batch_id, quantity=None, cost_price=None,
+                     expiration_date="__KEEP__"):
+        from models.batch_model import update_batch
+        ok, msg = update_batch(batch_id, quantity, cost_price, expiration_date)
+        if ok:
+            log_action(user["user_id"], "UPDATE_BATCH",
+                       f"batch_id={batch_id}")
+        return ok, msg
+    
+    @staticmethod
+    def archive_batch(user, batch_id):
+        ok, msg = archive_batch(batch_id)
+        if ok:
+            log_action(user["user_id"], "ARCHIVE_BATCH",
+                       f"batch_id={batch_id}")
         return ok, msg
 
     # ─────────────────────────────────────────────

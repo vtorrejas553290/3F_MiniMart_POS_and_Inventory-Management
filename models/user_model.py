@@ -6,17 +6,15 @@ from database import get_connection, now_local
 
 
 # ─────────────────────────────────────────────
-# HELPER — combine first / middle / last
+# HELPERS
 # ─────────────────────────────────────────────
 
 def _build_full_name(first, middle, last):
-    """Join the name parts into a display name."""
     parts = [p for p in (first, middle, last) if p and p.strip()]
     return " ".join(parts)
 
 
 def _row_with_full_name(row):
-    """Return a dict with a computed `full_name` key."""
     if row is None:
         return None
     d = dict(row)

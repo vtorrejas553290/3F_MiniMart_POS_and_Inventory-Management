@@ -22,6 +22,7 @@ from views.purchase_view import PurchaseView
 from views.sales_view import SalesView
 from views.activity_log_view import ActivityLogView
 from views.user_management_view import UserManagementView
+from views.sales_view import SalesView
 
 
 class MainWindow(ctk.CTk):
