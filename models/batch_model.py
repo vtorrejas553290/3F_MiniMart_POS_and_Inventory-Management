@@ -403,3 +403,35 @@ def update_batch(batch_id, quantity=None, cost_price=None,
         return False, str(e)
     finally:
         conn.close()
+
+def count_expiring_soon(days=30):
+    """Count non-expired batches expiring within `days` days, quantity > 0."""
+    conn = get_connection()
+    today = now_local()[:10]
+    row = conn.execute("""
+        SELECT COUNT(*) AS c
+        FROM batches
+        WHERE is_archived = 0
+          AND quantity > 0
+          AND expiration_date IS NOT NULL
+          AND expiration_date >= ?
+          AND expiration_date <= DATE(?, '+' || ? || ' days')
+    """, (today, today, days)).fetchone()
+    conn.close()
+    return row["c"]
+
+
+def count_expired():
+    """Count batches already expired with quantity > 0."""
+    conn = get_connection()
+    today = now_local()[:10]
+    row = conn.execute("""
+        SELECT COUNT(*) AS c
+        FROM batches
+        WHERE is_archived = 0
+          AND quantity > 0
+          AND expiration_date IS NOT NULL
+          AND expiration_date < ?
+    """, (today,)).fetchone()
+    conn.close()
+    return row["c"]

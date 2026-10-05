@@ -323,3 +323,49 @@ def get_top_selling_products(date_from=None, date_to=None,
         result.append(d)
 
     return result
+
+def get_profit_breakdown_today(date_str=None):
+    """
+    Return profit breakdown for a given day (default today):
+      - profit         : total profit
+      - revenue        : total revenue
+      - cost           : total cost of goods sold
+      - cash_profit    : profit from Cash transactions
+      - gcash_profit   : profit from GCash transactions
+      - txn_count      : number of transactions today
+    """
+    if date_str is None:
+        date_str = now_local()[:10]
+
+    conn = get_connection()
+    row = conn.execute("""
+        SELECT
+            COALESCE(SUM((ti.price - ti.cost_price) * ti.quantity), 0) AS profit,
+            COALESCE(SUM(ti.subtotal), 0)                              AS revenue,
+            COALESCE(SUM(ti.cost_price * ti.quantity), 0)              AS cost,
+            COALESCE(SUM(CASE WHEN t.payment_method = 'Cash'
+                              THEN (ti.price - ti.cost_price) * ti.quantity
+                              ELSE 0 END), 0)                          AS cash_profit,
+            COALESCE(SUM(CASE WHEN t.payment_method = 'GCash'
+                              THEN (ti.price - ti.cost_price) * ti.quantity
+                              ELSE 0 END), 0)                          AS gcash_profit
+        FROM transaction_items ti
+        JOIN transactions t ON ti.transaction_id = t.transaction_id
+        WHERE DATE(t.created_at) = ?
+    """, (date_str,)).fetchone()
+
+    txn_count = conn.execute("""
+        SELECT COUNT(*) AS c FROM transactions
+        WHERE DATE(created_at) = ?
+    """, (date_str,)).fetchone()["c"]
+
+    conn.close()
+
+    return {
+        "profit":       row["profit"],
+        "revenue":      row["revenue"],
+        "cost":         row["cost"],
+        "cash_profit":  row["cash_profit"],
+        "gcash_profit": row["gcash_profit"],
+        "txn_count":    txn_count,
+    }
