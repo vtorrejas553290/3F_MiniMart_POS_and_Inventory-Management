@@ -3,11 +3,12 @@
 # ─────────────────────────────────────────────
 
 from models.supplier_model import (
-    get_all_suppliers, add_supplier, update_supplier,
-    archive_supplier, unarchive_supplier
+    get_all_suppliers, get_supplier, add_supplier, update_supplier,
+    archive_supplier, unarchive_supplier,
 )
 from models.supplier_category_model import (
-    get_all_supplier_categories, add_supplier_category, update_supplier_category
+    get_all_supplier_categories, add_supplier_category,
+    update_supplier_category,
 )
 from models.activity_log_model import log_action
 
@@ -23,16 +24,35 @@ class SupplierController:
         return get_all_suppliers(include_archived)
 
     @staticmethod
-    def add(user, name, contact, address, supplier_category_id):
-        ok, msg = add_supplier(name, contact, address, supplier_category_id)
+    def get(supplier_id):
+        return get_supplier(supplier_id)
+
+    @staticmethod
+    def add(user, name, contact_number, supplier_category_id,
+            contact_person_first=None,
+            contact_person_middle=None,
+            contact_person_last=None,
+            address=None):
+        ok, msg = add_supplier(
+            name, contact_number, supplier_category_id,
+            contact_person_first, contact_person_middle,
+            contact_person_last, address,
+        )
         if ok:
             log_action(user["user_id"], "ADD_SUPPLIER", name)
         return ok, msg
 
     @staticmethod
-    def update(user, supplier_id, name, contact, address, supplier_category_id):
-        ok, msg = update_supplier(supplier_id, name, contact, address,
-                                  supplier_category_id)
+    def update(user, supplier_id, name, contact_number, supplier_category_id,
+               contact_person_first=None,
+               contact_person_middle=None,
+               contact_person_last=None,
+               address=None):
+        ok, msg = update_supplier(
+            supplier_id, name, contact_number, supplier_category_id,
+            contact_person_first, contact_person_middle,
+            contact_person_last, address,
+        )
         if ok:
             log_action(user["user_id"], "UPDATE_SUPPLIER",
                        f"ID {supplier_id} - {name}")

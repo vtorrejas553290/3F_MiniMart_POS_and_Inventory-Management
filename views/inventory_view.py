@@ -5,6 +5,7 @@
 from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox
+from views.inventory_report_dialog import InventoryReportDialog
 
 from controllers.auth_controller import AuthController
 from controllers.inventory_controller import InventoryController
@@ -61,6 +62,12 @@ class InventoryView(ctk.CTkFrame):
             actions = ctk.CTkFrame(header_frame, fg_color="transparent")
             actions.pack(side="right")
 
+            ctk.CTkButton(actions, text="Export PDF",
+                          height=38, corner_radius=8,
+                          font=font_bold(12),
+                          fg_color=BRAND_GREEN, hover_color="#1E9040",
+                          command=self._export_pdf).pack(side="right", padx=(6, 0))
+
             ctk.CTkButton(actions, text="+ Add Product",
                           height=38, corner_radius=8,
                           font=font_bold(12),
@@ -70,7 +77,7 @@ class InventoryView(ctk.CTkFrame):
             ctk.CTkButton(actions, text="+ Add Category",
                           height=38, corner_radius=8,
                           font=font_bold(12),
-                          fg_color=BRAND_GREEN, hover_color="#1E9040",
+                          fg_color=ACCENT, hover_color=ACCENT_HOVER,
                           command=self._add_category_dialog).pack(side="right", padx=(6, 0))
 
         # ---- Filter card ----
@@ -481,3 +488,26 @@ class InventoryView(ctk.CTkFrame):
         self.category_names = ["All Categories"] + [c["name"] for c in self.categories]
         self.category_menu.configure(values=self.category_names)
         self._load()
+
+    def _export_pdf(self):
+        """Build the report data using the CURRENT filters, then open preview."""
+        # ---- Re-fetch with the same filters currently on screen ----
+        products = InventoryController.list_by_category(
+            self.selected_category_id,
+            include_archived=self.show_archived,
+        )
+        if self.search_query:
+            products = [p for p in products if self._matches_search(p)]
+
+        filters = {
+            "category":      self.category_var.get() if self.selected_category_id else None,
+            "search":        self.search_query or None,
+            "show_archived": self.show_archived,
+            "low_only":      False,
+        }
+
+        InventoryReportDialog(
+            parent=self.winfo_toplevel(),
+            products=products,
+            filters=filters,
+        )

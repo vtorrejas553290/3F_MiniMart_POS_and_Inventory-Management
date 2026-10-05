@@ -932,7 +932,7 @@ class CategoryDialog(ctk.CTkToplevel):
 
         ok, msg = InventoryController.add_category(self.user, name, desc)
         if not ok:
-            messagebox.showerror("Error", msg)
+            messagebox.showerror("Error", msg)  
             return
 
         self.name_e.delete(0, "end")

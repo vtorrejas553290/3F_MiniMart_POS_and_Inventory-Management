@@ -557,6 +557,7 @@ class POSView(ctk.CTkFrame):
                                    "Add products before checking out.")
             return
 
+        # ---- Re-validate stock ----
         fresh_products = {
             p["product_id"]: p for p in InventoryController.list_products()
         }
@@ -584,6 +585,7 @@ class POSView(ctk.CTkFrame):
             self._render_products()
             return
 
+        # ---- Payment handling ----
         method = self.payment_var.get()
         gcash_reference = None
 
@@ -615,14 +617,22 @@ class POSView(ctk.CTkFrame):
         total = self.controller.get_total()
         change = paid - total if method == "Cash" else 0
 
+        # ---- Confirm dialog ----
         confirm = CheckoutConfirmDialog(
             self.winfo_toplevel(),
-            total=total, amount_paid=paid, payment_method=method,
-            change=change, gcash_reference=gcash_reference,
+            total=total,
+            amount_paid=paid,
+            payment_method=method,
+            change=change,
+            gcash_reference=gcash_reference,
         )
         if not confirm.confirmed:
             return
 
+        # ---- Snapshot cart BEFORE clearing it ----
+        cart_snapshot = [dict(item) for item in self.controller.cart]
+
+        # ---- Persist transaction ----
         ok, result, change = TransactionController.create(
             user_id=self.user["user_id"],
             cart=self.controller.cart,
@@ -634,22 +644,34 @@ class POSView(ctk.CTkFrame):
             messagebox.showerror("Checkout Failed", str(result))
             return
 
-        messagebox.showinfo(
-            "Success",
-            f"Transaction #{result} completed.\n"
-            f"Total: ₱{total:.2f}\n"
-            f"Paid: ₱{paid:.2f}\n"
-            f"Change: ₱{change:.2f}"
-        )
-
+        # ---- Clear cart immediately after successful save ----
         self.controller.clear_cart()
         self.amount_entry.delete(0, "end")
         self.ref_entry.delete(0, "end")
 
-        self.products = InventoryController.list_by_category(self.selected_category_id)
+        # ---- Refresh product list (stock changed) ----
+        self.products = InventoryController.list_by_category(
+            self.selected_category_id
+        )
         self._render_products()
         self._refresh_cart()
 
+        # ---- Show receipt ----
+        from datetime import datetime
+        from views.receipt_dialog import ReceiptDialog
+
+        ReceiptDialog(
+            parent=self.winfo_toplevel(),
+            txn_id=result,
+            user=self.user,
+            cart=cart_snapshot,
+            payment_method=method,
+            amount_paid=paid,
+            change=change,
+            total=total,
+            gcash_reference=gcash_reference,
+            created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
 
 # ─────────────────────────────────────────────
 # CHECKOUT DIALOG

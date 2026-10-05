@@ -1,17 +1,6 @@
 # ─────────────────────────────────────────────
 # DATABASE SETUP (SQLite — batch-tracked inventory)
 # ─────────────────────────────────────────────
-#
-# Relationship map:
-#
-#   users ──< transactions ──< transaction_items >── products
-#   users ──< purchases    ──< purchase_items    >── products
-#   users ──< activity_logs
-#   supplier_categories ──< suppliers ──< products
-#   categories          ──< products
-#   products            ──< batches              ← NEW (replaces inventory)
-#
-# Root tables: users, categories, supplier_categories
 
 import sqlite3
 import datetime
@@ -23,7 +12,6 @@ from config import DB_PATH, ROLE_ADMIN
 # ─────────────────────────────────────────────
 
 def now_local():
-    """Return current local time as 'YYYY-MM-DD HH:MM:SS'."""
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -78,9 +66,12 @@ def initialize_database():
         CREATE TABLE IF NOT EXISTS suppliers (
             supplier_id          INTEGER PRIMARY KEY AUTOINCREMENT,
             name                 TEXT NOT NULL,
-            contact              TEXT,
-            address              TEXT,
             supplier_category_id INTEGER NOT NULL,
+            contact_number       TEXT,
+            contact_person_first TEXT,
+            contact_person_middle TEXT,
+            contact_person_last  TEXT,
+            address              TEXT,
             is_archived          INTEGER DEFAULT 0,
             created_at           TEXT NOT NULL,
             FOREIGN KEY (supplier_category_id)
@@ -98,7 +89,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 5. products (no stock, no expiration — those live in batches) ----
+    # ---- 5. products ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS products (
             product_id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,7 +112,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 6. batches (replaces `inventory`) ----
+    # ---- 6. batches ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS batches (
             batch_id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,7 +147,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 8. transaction_items (records which batch a sale came from) ----
+    # ---- 8. transaction_items ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS transaction_items (
             item_id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,7 +181,7 @@ def initialize_database():
         )
     """)
 
-    # ---- 10. purchase_items (each line can carry an expiration date) ----
+    # ---- 10. purchase_items ----
     cur.execute("""
         CREATE TABLE IF NOT EXISTS purchase_items (
             pitem_id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,8 +210,54 @@ def initialize_database():
     conn.commit()
     conn.close()
 
+    _run_migrations()
     _seed_default_admin()
     _seed_default_supplier_category()
+
+
+# ─────────────────────────────────────────────
+# MIGRATIONS (safe ALTER TABLE — for existing DBs)
+# ─────────────────────────────────────────────
+
+def _run_migrations():
+    """Add new columns to existing tables without losing data."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # ---- suppliers: contact → contact_number + contact person ----
+    migrations = [
+        ("ALTER TABLE suppliers ADD COLUMN contact_number TEXT",
+         "suppliers.contact_number"),
+        ("ALTER TABLE suppliers ADD COLUMN contact_person_first TEXT",
+         "suppliers.contact_person_first"),
+        ("ALTER TABLE suppliers ADD COLUMN contact_person_middle TEXT",
+         "suppliers.contact_person_middle"),
+        ("ALTER TABLE suppliers ADD COLUMN contact_person_last TEXT",
+         "suppliers.contact_person_last"),
+    ]
+    for sql, name in migrations:
+        try:
+            cur.execute(sql)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+    # ---- Copy old `contact` → `contact_number` (one-time) ----
+    try:
+        cols = [r[1] for r in cur.execute("PRAGMA table_info(suppliers)")]
+        if "contact" in cols:
+            cur.execute("""
+                UPDATE suppliers
+                SET contact_number = contact
+                WHERE contact_number IS NULL
+                  AND contact IS NOT NULL
+                  AND contact != ''
+            """)
+            conn.commit()
+    except Exception:
+        pass
+
+    conn.close()
 
 
 # ─────────────────────────────────────────────
