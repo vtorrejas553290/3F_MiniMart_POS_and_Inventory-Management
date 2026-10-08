@@ -383,16 +383,8 @@ class POSView(ctk.CTkFrame):
                     f"You've reached the maximum available quantity."
                 )
             )
-        elif already_in_cart:
-            click_action = lambda prod=product: (
-                self._shake_card(prod["product_id"]),
-                messagebox.showinfo(
-                    "Already in Cart",
-                    f"{self._display_name(prod)} is already in the cart.\n\n"
-                    f"Use the quantity field on the right to adjust it."
-                )
-            )
         else:
+            # This now handles both new items AND adding more of an existing item
             click_action = lambda prod=product: self._add_to_cart(prod)
 
         widgets = [
@@ -446,9 +438,9 @@ class POSView(ctk.CTkFrame):
                 f"{self._display_name(product)} is out of stock."
             )
             return
-        if self._get_cart_quantity(product["product_id"]) > 0:
-            self._shake_card(product["product_id"])
-            return
+        
+        # We now allow adding to cart even if it's already there;
+        # the controller will handle incrementing the quantity.
         self.controller.add_to_cart(product, qty=1)
         self._refresh_cart()
 
