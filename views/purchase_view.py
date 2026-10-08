@@ -862,20 +862,77 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
             return
 
         for p in products:
-            ctk.CTkButton(
-                self.products_frame,
-                text=f"  {p['name']}  ({p['product_code']})",
-                anchor="w",
-                height=38,
-                corner_radius=8,
-                font=font(12),
-                fg_color=BG_INPUT,
-                hover_color="#EAF0FF",
-                text_color=FG_PRIMARY,
-                border_width=1,
-                border_color=BORDER,
-                command=lambda prod=p: self._add_line(prod)
-            ).pack(fill="x", pady=3)
+            self._render_product_button(p)
+
+    def _render_product_button(self, product):
+        """One row per product: full display name + stock badge."""
+        stock = product.get("stock_qty", 0) or 0
+        low_level = product.get("low_stock_level", 0) or 0
+
+        # ---- Build display name: Brand + Name + Size ----
+        display = " ".join(
+            part for part in (
+                product.get("brand"),
+                product.get("name"),
+                product.get("size"),
+            )
+            if part
+        )
+
+        # ---- Stock badge ----
+        if stock <= 0:
+            badge_text  = "Stock: 0"
+            badge_color = DANGER
+        elif stock <= low_level:
+            badge_text  = f"Stock: {stock} (low)"
+            badge_color = "#D97706"
+        else:
+            badge_text  = f"Stock: {stock}"
+            badge_color = SUCCESS
+
+        # ---- Row container ----
+        row = ctk.CTkFrame(self.products_frame,
+                           fg_color=BG_INPUT,
+                           corner_radius=8,
+                           border_width=1,
+                           border_color=BORDER,
+                           height=42)
+        row.pack(fill="x", pady=3)
+        row.pack_propagate(False)
+
+        # ---- Left: name + code (clickable) ----
+        name_btn = ctk.CTkButton(
+            row,
+            text=f"{display}  ({product['product_code']})",
+            anchor="w",
+            height=40,
+            corner_radius=0,
+            font=font(12),
+            fg_color="transparent",
+            hover_color="#EAF0FF",
+            text_color=FG_PRIMARY,
+            command=lambda prod=product: self._add_line(prod),
+        )
+        name_btn.pack(side="left", fill="both", expand=True, padx=(4, 0))
+
+        # ---- Right: stock badge ----
+        badge = ctk.CTkLabel(
+            row,
+            text=badge_text,
+            font=font_bold(11),
+            text_color=badge_color,
+            width=110,
+            anchor="e",
+        )
+        badge.pack(side="right", padx=(0, 12))
+
+        # ---- Whole row clickable ----
+        for w in (row, badge):
+            w.bind("<Button-1>", lambda e, prod=product: self._add_line(prod))
+            try:
+                w.configure(cursor="hand2")
+            except Exception:
+                pass
 
     # ─────────────────────────────────────────────
     # ADD A LINE
