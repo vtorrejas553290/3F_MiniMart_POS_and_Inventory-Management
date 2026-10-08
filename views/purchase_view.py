@@ -681,12 +681,13 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         self.user = user
         self.on_save = on_save
         self.title("New Purchase Order")
-        self.geometry("820x580")
+        self.geometry("920x620")
         self.resizable(False, False)
         self.configure(fg_color=BG_MAIN)
 
         self.suppliers = SupplierController.list_suppliers()
         self.cart = []
+        self._supplier_products = []
 
         self._build()
         prepare_dialog_screen(self, self.parent)
@@ -744,6 +745,7 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         body = ctk.CTkFrame(self, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=20, pady=(0, 8))
 
+        # ---- LEFT: products of supplier ----
         left = ctk.CTkFrame(body, fg_color=BG_CARD,
                             corner_radius=10,
                             border_width=1,
@@ -754,9 +756,30 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                      font=font_bold(12),
                      text_color=FG_PRIMARY).pack(pady=(12, 4))
 
+        ctk.CTkLabel(left,
+                     text="Click a product to add it to the order",
+                     font=font(10),
+                     text_color=FG_MUTED).pack(pady=(0, 6))
+
+        # ---- Column header for products ----
+        prod_header = ctk.CTkFrame(left, fg_color="transparent")
+        prod_header.pack(fill="x", padx=8, pady=(0, 4))
+        prod_cols = [
+            ("Name",     140),
+            ("Size",      60),
+            ("Unit",      45),
+            ("Category",  90),
+            ("Stock",     55),
+        ]
+        for text, width in prod_cols:
+            ctk.CTkLabel(prod_header, text=text, width=width,
+                         anchor="w", font=font_bold(10),
+                         text_color=FG_SECONDARY).pack(side="left", padx=2)
+
         self.products_frame = ctk.CTkScrollableFrame(left, fg_color="transparent")
         self.products_frame.pack(fill="both", expand=True, padx=8, pady=(0, 10))
 
+        # ---- RIGHT: order lines ----
         right = ctk.CTkFrame(body, fg_color=BG_CARD,
                              corner_radius=10,
                              border_width=1,
@@ -766,6 +789,22 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         ctk.CTkLabel(right, text="Order Lines",
                      font=font_bold(12),
                      text_color=FG_PRIMARY).pack(pady=(12, 4))
+
+        # ---- Column header for order lines ----
+        line_header = ctk.CTkFrame(right, fg_color="transparent")
+        line_header.pack(fill="x", padx=8, pady=(0, 4))
+        line_cols = [
+            ("Name",     120),
+            ("Size",      50),
+            ("Unit",      40),
+            ("Qty",       40),
+            ("Cost",      65),
+            ("Subtotal",  75),
+        ]
+        for text, width in line_cols:
+            ctk.CTkLabel(line_header, text=text, width=width,
+                         anchor="w", font=font_bold(10),
+                         text_color=FG_SECONDARY).pack(side="left", padx=2)
 
         self.lines_frame = ctk.CTkScrollableFrame(right, fg_color="transparent")
         self.lines_frame.pack(fill="both", expand=True, padx=8, pady=(0, 10))
@@ -853,6 +892,7 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
             return
 
         products = InventoryController.list_by_supplier(supplier_id)
+        self._supplier_products = products
 
         if not products:
             ctk.CTkLabel(self.products_frame,
@@ -862,20 +902,71 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
             return
 
         for p in products:
-            ctk.CTkButton(
-                self.products_frame,
-                text=f"  {p['name']}  ({p['product_code']})",
-                anchor="w",
-                height=38,
-                corner_radius=8,
-                font=font(12),
-                fg_color=BG_INPUT,
-                hover_color="#EAF0FF",
-                text_color=FG_PRIMARY,
-                border_width=1,
-                border_color=BORDER,
-                command=lambda prod=p: self._add_line(prod)
-            ).pack(fill="x", pady=3)
+            self._render_product_row(p)
+
+    def _render_product_row(self, p):
+        # ---- Determine stock color ----
+        stock_qty = p.get("stock_qty", 0) if hasattr(p, "get") else p["stock_qty"]
+        low_level = (p.get("low_stock_level", 0) or 0) if hasattr(p, "get") else (p["low_stock_level"] or 0)
+
+        if stock_qty <= 0:
+            stock_color = DANGER
+        elif stock_qty <= low_level:
+            stock_color = "#D97706"
+        else:
+            stock_color = SUCCESS
+
+        # ---- Row container (clickable) ----
+        row = ctk.CTkFrame(self.products_frame,
+                           fg_color=BG_INPUT,
+                           corner_radius=6,
+                           border_width=1,
+                           border_color=BORDER,
+                           height=38)
+        row.pack(fill="x", pady=3)
+        row.pack_propagate(False)
+
+        # ---- Data cells ----
+        name_label = ctk.CTkLabel(row, text=p["name"] or "-",
+                                  width=140, anchor="w",
+                                  font=font_bold(11),
+                                  text_color=FG_PRIMARY)
+        name_label.pack(side="left", padx=2)
+
+        size_label = ctk.CTkLabel(row, text=p.get("size") or "-",
+                                  width=60, anchor="w",
+                                  font=font(11),
+                                  text_color=FG_SECONDARY)
+        size_label.pack(side="left", padx=2)
+
+        unit_label = ctk.CTkLabel(row, text=p.get("unit") or "-",
+                                  width=45, anchor="w",
+                                  font=font(11),
+                                  text_color=FG_SECONDARY)
+        unit_label.pack(side="left", padx=2)
+
+        cat_label = ctk.CTkLabel(row, text=p.get("category_name") or "-",
+                                 width=90, anchor="w",
+                                 font=font(11),
+                                 text_color=FG_SECONDARY)
+        cat_label.pack(side="left", padx=2)
+
+        stock_label = ctk.CTkLabel(row, text=f"{stock_qty}",
+                                   width=55, anchor="w",
+                                   font=font_bold(11),
+                                   text_color=stock_color)
+        stock_label.pack(side="left", padx=2)
+
+        # ---- Click binding on all cells ----
+        widgets = [row, name_label, size_label, unit_label, cat_label, stock_label]
+        for w in widgets:
+            w.bind("<Button-1>", lambda e, prod=p: self._add_line(prod))
+            w.bind("<Enter>", lambda e, r=row: r.configure(fg_color="#EAF0FF"))
+            w.bind("<Leave>", lambda e, r=row: r.configure(fg_color=BG_INPUT))
+            try:
+                w.configure(cursor="hand2")
+            except Exception:
+                pass
 
     # ─────────────────────────────────────────────
     # ADD A LINE
@@ -890,7 +981,7 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
 
         prompt = ctk.CTkToplevel(self)
         prompt.title(f"Add {product['name']}")
-        prompt.geometry("360x320")
+        prompt.geometry("380x400")
         prompt.resizable(False, False)
         prompt.configure(fg_color=BG_MAIN)
 
@@ -900,13 +991,31 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(prompt, text=product["product_code"],
                      font=font(11),
-                     text_color=FG_SECONDARY).pack(pady=(0, 14))
+                     text_color=FG_SECONDARY).pack(pady=(0, 4))
+
+        # ---- Product details chip ----
+        info_parts = []
+        if product.get("size"):
+            info_parts.append(f"Size: {product['size']}")
+        if product.get("unit"):
+            info_parts.append(f"Unit: {product['unit']}")
+        if product.get("category_name"):
+            info_parts.append(f"Cat: {product['category_name']}")
+        if info_parts:
+            ctk.CTkLabel(prompt, text="  •  ".join(info_parts),
+                         font=font(10),
+                         text_color=FG_MUTED).pack(pady=(0, 4))
+
+        stock_qty = product.get("stock_qty", 0) if hasattr(product, "get") else product["stock_qty"]
+        ctk.CTkLabel(prompt, text=f"Current Stock: {stock_qty}",
+                     font=font_bold(11),
+                     text_color=SUCCESS if stock_qty > 0 else DANGER).pack(pady=(0, 14))
 
         ctk.CTkLabel(prompt, text="QUANTITY",
                      font=font_bold(10),
                      text_color=FG_SECONDARY).pack(anchor="w", padx=30, pady=(0, 4))
 
-        qty_e = ctk.CTkEntry(prompt, width=300, height=36,
+        qty_e = ctk.CTkEntry(prompt, width=320, height=36,
                              corner_radius=8,
                              font=font(12),
                              fg_color=BG_INPUT,
@@ -919,7 +1028,7 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                      font=font_bold(10),
                      text_color=FG_SECONDARY).pack(anchor="w", padx=30, pady=(12, 4))
 
-        cost_e = ctk.CTkEntry(prompt, width=300, height=36,
+        cost_e = ctk.CTkEntry(prompt, width=320, height=36,
                               corner_radius=8,
                               font=font(12),
                               fg_color=BG_INPUT,
@@ -939,17 +1048,21 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                 return
 
             self.cart.append({
-                "product_id": product["product_id"],
-                "name":       product["name"],
-                "code":       product["product_code"],
-                "quantity":   qty,
-                "cost":       cost,
+                "product_id":    product["product_id"],
+                "name":          product["name"],
+                "code":          product["product_code"],
+                "size":          product.get("size") or "",
+                "unit":          product.get("unit") or "",
+                "category_name": product.get("category_name") or "",
+                "stock_qty":     stock_qty,
+                "quantity":      qty,
+                "cost":          cost,
             })
             prompt.destroy()
             self._render_lines()
 
         ctk.CTkButton(prompt, text="Add",
-                      width=300, height=40,
+                      width=320, height=40,
                       corner_radius=8,
                       font=font_bold(13),
                       fg_color=BRAND_GREEN, hover_color="#1E9040",
@@ -978,34 +1091,49 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
             row = ctk.CTkFrame(self.lines_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=2)
 
-            ctk.CTkLabel(row, text=line["name"], width=140,
+            ctk.CTkLabel(row, text=line["name"], width=120,
                          anchor="w",
                          font=font_bold(11),
-                         text_color=FG_PRIMARY).pack(side="left", padx=(8, 3), pady=6)
+                         text_color=FG_PRIMARY).pack(side="left", padx=(6, 2), pady=6)
+
+            ctk.CTkLabel(row, text=line.get("size") or "-",
+                         width=50,
+                         anchor="w",
+                         font=font(10),
+                         text_color=FG_SECONDARY).pack(side="left", padx=2)
+
+            ctk.CTkLabel(row, text=line.get("unit") or "-",
+                         width=40,
+                         anchor="w",
+                         font=font(10),
+                         text_color=FG_SECONDARY).pack(side="left", padx=2)
 
             ctk.CTkLabel(row, text=f"×{line['quantity']}",
                          width=40,
+                         anchor="w",
                          font=font(11),
-                         text_color=FG_SECONDARY).pack(side="left", padx=3)
+                         text_color=FG_SECONDARY).pack(side="left", padx=2)
 
             ctk.CTkLabel(row, text=f"₱{line['cost']:.2f}",
-                         width=70,
+                         width=65,
+                         anchor="w",
                          font=font(11),
-                         text_color=FG_SECONDARY).pack(side="left", padx=3)
+                         text_color=FG_SECONDARY).pack(side="left", padx=2)
 
             subtotal = line["quantity"] * line["cost"]
             ctk.CTkLabel(row, text=f"₱{subtotal:.2f}",
-                         width=80,
+                         width=75,
+                         anchor="w",
                          font=font_bold(11),
-                         text_color=ACCENT).pack(side="left", padx=3)
+                         text_color=ACCENT).pack(side="left", padx=2)
 
-            ctk.CTkButton(row, text="✕", width=28, height=28,
+            ctk.CTkButton(row, text="✕", width=26, height=26,
                           corner_radius=6,
                           font=font(11),
                           fg_color=DANGER, hover_color=DANGER_HOVER,
                           command=lambda pid=line["product_id"]:
                               self._remove_line(pid)
-                          ).pack(side="right", padx=8, pady=4)
+                          ).pack(side="right", padx=6, pady=4)
 
         total = sum(l["quantity"] * l["cost"] for l in self.cart)
         self.total_label.configure(text=f"₱{total:.2f}")
@@ -1065,7 +1193,7 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
         self.parent = parent
         self.purchase = purchase
         self.title(f"PO #{purchase['purchase_id']}")
-        self.geometry("660x520")
+        self.geometry("720x560")
         self.resizable(False, False)
         self.configure(fg_color=BG_MAIN)
         self._build()
@@ -1133,7 +1261,7 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
 
         header = ctk.CTkFrame(lines, fg_color="transparent")
         header.pack(fill="x", pady=(4, 8))
-        for text, width in [("Code", 90), ("Name", 200),
+        for text, width in [("Code", 90), ("Name", 180),
                             ("Qty", 60), ("Cost", 90), ("Subtotal", 100)]:
             ctk.CTkLabel(header, text=text, width=width,
                          anchor="w",
@@ -1153,7 +1281,7 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
                          text_color=FG_SECONDARY).pack(side="left", padx=3, pady=6)
 
             ctk.CTkLabel(row, text=it["product_name"],
-                         width=200, anchor="w",
+                         width=180, anchor="w",
                          font=font_bold(11),
                          text_color=FG_PRIMARY).pack(side="left", padx=3)
 

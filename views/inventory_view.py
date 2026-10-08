@@ -284,21 +284,24 @@ class InventoryView(ctk.CTkFrame):
         header = ctk.CTkFrame(self.list_frame, fg_color="transparent")
         header.pack(fill="x", pady=(4, 8))
 
+        # ---- Arranged columns: Brand, Name, Size separated ----
         cols = [
-            ("Code",        90),
-            ("Name",        200),
-            ("Unit",        50),
-            ("Category",    100),
-            ("Supplier",    120),
-            ("Price",       75),
-            ("Stock",       55),
-            ("Expires",     100),
-            ("Status",      90),
+            ("Code",     70),
+            ("Brand",    90),
+            ("Name",    130),
+            ("Size",     60),
+            ("Unit",     45),
+            ("Category", 90),
+            ("Supplier",100),
+            ("Price",    70),
+            ("Stock",    50),
+            ("Expires",  90),
+            ("Status",   85),
         ]
         for text, width in cols:
             ctk.CTkLabel(header, text=text, width=width, anchor="w",
                          font=font_bold(11),
-                         text_color=FG_SECONDARY).pack(side="left", padx=3)
+                         text_color=FG_SECONDARY).pack(side="left", padx=2)
 
         if not page_products:
             msg = "No products match your search." if self.search_query \
@@ -318,30 +321,38 @@ class InventoryView(ctk.CTkFrame):
         row = ctk.CTkFrame(self.list_frame, fg_color=bg, corner_radius=6)
         row.pack(fill="x", pady=2)
 
+        # ---- Data columns (packed LEFT first so they define the row height) ----
         ctk.CTkLabel(row, text=p["product_code"] or "-",
-                     width=90, anchor="w", font=font(11),
-                     text_color=FG_SECONDARY).pack(side="left", padx=3, pady=6)
+                     width=70, anchor="w", font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=2, pady=8)
 
-        display_name = self._display_name(p)
-        ctk.CTkLabel(row, text=display_name, width=200, anchor="w",
-                     font=font_bold(12),
-                     text_color=FG_PRIMARY).pack(side="left", padx=3)
+        ctk.CTkLabel(row, text=p["brand"] or "-",
+                     width=90, anchor="w", font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=2)
+
+        ctk.CTkLabel(row, text=p["name"] or "-",
+                     width=130, anchor="w", font=font_bold(12),
+                     text_color=FG_PRIMARY).pack(side="left", padx=2)
+
+        ctk.CTkLabel(row, text=p["size"] or "-",
+                     width=60, anchor="w", font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=2)
 
         ctk.CTkLabel(row, text=p["unit"] or "-",
-                     width=50, anchor="w", font=font(11),
-                     text_color=FG_SECONDARY).pack(side="left", padx=3)
+                     width=45, anchor="w", font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=2)
 
         ctk.CTkLabel(row, text=p["category_name"] or "-",
-                     width=100, anchor="w", font=font(11),
-                     text_color=FG_PRIMARY).pack(side="left", padx=3)
+                     width=90, anchor="w", font=font(11),
+                     text_color=FG_PRIMARY).pack(side="left", padx=2)
 
         ctk.CTkLabel(row, text=p["supplier_name"] or "-",
-                     width=120, anchor="w", font=font(11),
-                     text_color=FG_SECONDARY).pack(side="left", padx=3)
+                     width=100, anchor="w", font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=2)
 
         ctk.CTkLabel(row, text=f"₱{p['price']:.2f}",
-                     width=75, anchor="w", font=font(11),
-                     text_color=FG_PRIMARY).pack(side="left", padx=3)
+                     width=70, anchor="w", font=font(11),
+                     text_color=FG_PRIMARY).pack(side="left", padx=2)
 
         # ---- Stock color ----
         stock_qty = p["stock_qty"]
@@ -355,14 +366,14 @@ class InventoryView(ctk.CTkFrame):
             stock_color = FG_PRIMARY
 
         ctk.CTkLabel(row, text=str(stock_qty),
-                     width=55, anchor="w", font=font_bold(11),
-                     text_color=stock_color).pack(side="left", padx=3)
+                     width=50, anchor="w", font=font_bold(11),
+                     text_color=stock_color).pack(side="left", padx=2)
 
         # ---- Earliest expiration ----
         exp_text, exp_color = self._expiration_display(p["earliest_expiration"])
-        ctk.CTkLabel(row, text=exp_text, width=100, anchor="w",
+        ctk.CTkLabel(row, text=exp_text, width=90, anchor="w",
                      font=font(11),
-                     text_color=exp_color).pack(side="left", padx=3)
+                     text_color=exp_color).pack(side="left", padx=2)
 
         # ---- Status ----
         if stock_qty > 0:
@@ -370,48 +381,46 @@ class InventoryView(ctk.CTkFrame):
         else:
             status_text, status_color = "Not Available", DANGER
 
-        ctk.CTkLabel(row, text=status_text, width=90, anchor="w",
+        ctk.CTkLabel(row, text=status_text, width=85, anchor="w",
                      font=font_bold(11),
-                     text_color=status_color).pack(side="left", padx=3)
+                     text_color=status_color).pack(side="left", padx=2)
 
-        # ---- Actions ----
-        if not AuthController.is_admin():
-            return
+        # ---- Actions frame (packed LAST on the right) ----
+        if AuthController.is_admin():
+            actions = ctk.CTkFrame(row, fg_color="transparent")
+            actions.pack(side="right", padx=4, pady=4)
 
-        actions = ctk.CTkFrame(row, fg_color="transparent")
-        actions.pack(side="right", padx=4)
+            if p["is_archived"]:
+                ctk.CTkButton(actions, text="Restore", width=70, height=28,
+                              corner_radius=6, font=font_bold(11),
+                              fg_color=BRAND_GREEN, hover_color="#1E9040",
+                              command=lambda prod=p: self._restore(prod)
+                              ).pack(side="left", padx=2)
+            else:
+                ctk.CTkButton(actions, text="Batches", width=70, height=28,
+                              corner_radius=6, font=font_bold(11),
+                              fg_color="#7C3AED", hover_color="#6D28D9",
+                              command=lambda prod=p: self._view_batches(prod)
+                              ).pack(side="left", padx=2)
 
-        if p["is_archived"]:
-            ctk.CTkButton(actions, text="Restore", width=70, height=28,
-                          corner_radius=6, font=font_bold(11),
-                          fg_color=BRAND_GREEN, hover_color="#1E9040",
-                          command=lambda prod=p: self._restore(prod)
-                          ).pack(side="left", padx=2)
-        else:
-            ctk.CTkButton(actions, text="Batches", width=70, height=28,
-                          corner_radius=6, font=font_bold(11),
-                          fg_color="#7C3AED", hover_color="#6D28D9",
-                          command=lambda prod=p: self._view_batches(prod)
-                          ).pack(side="left", padx=2)
+                ctk.CTkButton(actions, text="Restock", width=70, height=28,
+                              corner_radius=6, font=font_bold(11),
+                              fg_color=BRAND_YELLOW, hover_color="#E0B22E",
+                              text_color="#0F172A",
+                              command=lambda prod=p: self._restock(prod)
+                              ).pack(side="left", padx=2)
 
-            ctk.CTkButton(actions, text="Restock", width=70, height=28,
-                          corner_radius=6, font=font_bold(11),
-                          fg_color=BRAND_YELLOW, hover_color="#E0B22E",
-                          text_color="#0F172A",
-                          command=lambda prod=p: self._restock(prod)
-                          ).pack(side="left", padx=2)
+                ctk.CTkButton(actions, text="Edit", width=55, height=28,
+                              corner_radius=6, font=font_bold(11),
+                              fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                              command=lambda prod=p: self._edit_dialog(prod)
+                              ).pack(side="left", padx=2)
 
-            ctk.CTkButton(actions, text="Edit", width=55, height=28,
-                          corner_radius=6, font=font_bold(11),
-                          fg_color=ACCENT, hover_color=ACCENT_HOVER,
-                          command=lambda prod=p: self._edit_dialog(prod)
-                          ).pack(side="left", padx=2)
-
-            ctk.CTkButton(actions, text="Archive", width=65, height=28,
-                          corner_radius=6, font=font_bold(11),
-                          fg_color=DANGER, hover_color=DANGER_HOVER,
-                          command=lambda prod=p: self._archive(prod)
-                          ).pack(side="left", padx=2)
+                ctk.CTkButton(actions, text="Archive", width=65, height=28,
+                              corner_radius=6, font=font_bold(11),
+                              fg_color=DANGER, hover_color=DANGER_HOVER,
+                              command=lambda prod=p: self._archive(prod)
+                              ).pack(side="left", padx=2)
 
     @staticmethod
     def _display_name(p):

@@ -221,6 +221,7 @@ class POSView(ctk.CTkFrame):
             (p["brand"] or "").lower(),
             (p["size"] or "").lower(),
             (p["product_code"] or "").lower(),
+            (p.get("category_name") or "").lower(),
         ]
         return any(q in f for f in fields)
 
@@ -240,7 +241,7 @@ class POSView(ctk.CTkFrame):
     @staticmethod
     def _display_name(p):
         parts = [p["brand"], p["name"], p["size"]]
-        return " ".join(part for part in parts if part)
+        return " | ".join(part for part in parts if part)
 
     def _get_cart_quantity(self, product_id):
         return self.controller.get_quantity(product_id)
@@ -290,28 +291,33 @@ class POSView(ctk.CTkFrame):
         card.pack_propagate(False)
         self._cards[product["product_id"]] = card
 
+        # ---- Try to load the thumbnail ----
         thumb = self._load_thumbnail(product["image_path"], size=(56, 56))
 
-        thumb_box = ctk.CTkFrame(
-            card, width=56, height=56,
-            fg_color=NEUTRAL if (out_of_stock or at_max) else "#F1F5F9",
-            corner_radius=8,
-        )
-        thumb_box.place(x=10, rely=0.5, anchor="w")
-        thumb_box.pack_propagate(False)
+        # ---- Track all clickable widgets ----
+        widgets = [card]
 
+        # ---- Only create the thumbnail box if an image exists ----
         if thumb:
+            thumb_box = ctk.CTkFrame(
+                card, width=56, height=56,
+                fg_color=NEUTRAL if (out_of_stock or at_max) else "#F1F5F9",
+                corner_radius=8,
+            )
+            thumb_box.place(x=10, rely=0.5, anchor="w")
+            thumb_box.pack_propagate(False)
+
             thumb_label = ctk.CTkLabel(thumb_box, image=thumb, text="")
             thumb_label.place(relx=0.5, rely=0.5, anchor="center")
-        else:
-            thumb_label = ctk.CTkLabel(
-                thumb_box, text="📦", font=font(22),
-                text_color=FG_MUTED if (out_of_stock or at_max) else FG_SECONDARY,
-            )
-            thumb_label.place(relx=0.5, rely=0.5, anchor="center")
 
+            widgets.extend([thumb_box, thumb_label])
+            info_x = 78   # leave room for thumbnail
+        else:
+            info_x = 14   # no thumbnail — text starts near the left edge
+
+        # ---- Info frame (position depends on whether thumb exists) ----
         info = ctk.CTkFrame(card, fg_color="transparent")
-        info.place(x=78, rely=0.5, anchor="w")
+        info.place(x=info_x, rely=0.5, anchor="w")
 
         name_label = ctk.CTkLabel(
             info, text=self._display_name(product),
@@ -331,6 +337,19 @@ class POSView(ctk.CTkFrame):
         sep1 = ctk.CTkLabel(meta, text="  •  ", font=font(10),
                             text_color=FG_MUTED)
         sep1.pack(side="left")
+
+        # ---- Category label ----
+        category_label = ctk.CTkLabel(
+            meta,
+            text=product.get("category_name") or "-",
+            font=font(10),
+            text_color=FG_MUTED if (out_of_stock or at_max) else FG_SECONDARY,
+        )
+        category_label.pack(side="left")
+
+        sep1b = ctk.CTkLabel(meta, text="  •  ", font=font(10),
+                             text_color=FG_MUTED)
+        sep1b.pack(side="left")
 
         price_label = ctk.CTkLabel(
             meta, text=f"₱{product['price']:.2f}",
@@ -387,11 +406,12 @@ class POSView(ctk.CTkFrame):
             # This now handles both new items AND adding more of an existing item
             click_action = lambda prod=product: self._add_to_cart(prod)
 
-        widgets = [
-            card, thumb_box, thumb_label,
+        # ---- Add text widgets to clickable list ----
+        widgets.extend([
             info, name_label,
-            meta, code_label, sep1, price_label, sep2, stock_label,
-        ]
+            meta, code_label, sep1, category_label, sep1b,
+            price_label, sep2, stock_label,
+        ])
 
         for w in widgets:
             w.bind("<Button-1>", lambda e, action=click_action: action())
@@ -482,7 +502,7 @@ class POSView(ctk.CTkFrame):
             row = ctk.CTkFrame(self.cart_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=2)
 
-            display = " ".join(
+            display = " | ".join(
                 part for part in (item.get("brand"), item["name"], item.get("size"))
                 if part
             )
