@@ -13,7 +13,7 @@ from utils_pkg.inventory_report import (
 from config import (
     font, font_bold,
     BG_MAIN, BG_CARD, BORDER,
-    FG_PRIMARY, FG_SECONDARY, FG_MUTED,
+    FG_PRIMARY, FG_SECONDARY,
     BRAND_GREEN,
     NEUTRAL, NEUTRAL_HOVER, NEUTRAL_TEXT,
 )
@@ -23,11 +23,12 @@ class InventoryReportDialog(ctk.CTkToplevel):
 
     MONO_FONT = ("Consolas", 10)
 
-    def __init__(self, parent, products, filters):
+    def __init__(self, parent, products, filters, exporter_name=""):
         super().__init__(parent)
         self.parent = parent
         self.products = products
         self.filters = filters
+        self.exporter_name = exporter_name
         self.data = None
 
         self.title("Inventory Report Preview")
@@ -44,7 +45,6 @@ class InventoryReportDialog(ctk.CTkToplevel):
         self.focus_force()
 
     def _build(self):
-        # ---- Header ----
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=16, pady=(12, 4))
 
@@ -55,8 +55,7 @@ class InventoryReportDialog(ctk.CTkToplevel):
 
         ctk.CTkButton(header, text="✕",
                       width=30, height=30,
-                      corner_radius=6,
-                      font=font_bold(13),
+                      corner_radius=6, font=font_bold(13),
                       fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
                       text_color=NEUTRAL_TEXT,
                       command=self.destroy).pack(side="right")
@@ -67,9 +66,12 @@ class InventoryReportDialog(ctk.CTkToplevel):
                      text_color=FG_SECONDARY,
                      anchor="w").pack(fill="x", padx=16, pady=(0, 8))
 
-        # ---- Build report data ----
+        # ---- Build data ----
         try:
-            self.data = build_inventory_report_data(self.products, self.filters)
+            self.data = build_inventory_report_data(
+                self.products, self.filters,
+                exporter_name=self.exporter_name,
+            )
         except Exception as e:
             ctk.CTkLabel(self,
                          text=f"Could not build report:\n{e}",
@@ -106,29 +108,23 @@ class InventoryReportDialog(ctk.CTkToplevel):
 
         ctk.CTkButton(btn_row, text="Close",
                       width=120, height=40,
-                      corner_radius=8,
-                      font=font_bold(12),
+                      corner_radius=8, font=font_bold(12),
                       fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
                       text_color=NEUTRAL_TEXT,
-                      command=self.destroy
-                      ).pack(side="left")
+                      command=self.destroy).pack(side="left")
 
         ctk.CTkButton(btn_row, text="Save as PDF",
-                      height=40,
-                      corner_radius=8,
-                      font=font_bold(12),
+                      height=40, corner_radius=8, font=font_bold(12),
                       fg_color=BRAND_GREEN, hover_color="#1E9040",
-                      command=self._save_pdf
-                      ).pack(side="right", fill="x", expand=True, padx=(8, 0))
+                      command=self._save_pdf).pack(side="right", fill="x",
+                                                   expand=True, padx=(8, 0))
 
     def _save_pdf(self):
         if self.data is None:
             messagebox.showerror("Error", "No report data to export.")
             return
 
-        ok, result = export_inventory_pdf(
-            self.data, parent_window=self.parent
-        )
+        ok, result = export_inventory_pdf(self.data, parent_window=self.parent)
         if ok:
             messagebox.showinfo("Export Complete",
                                 f"PDF saved to:\n{result}")

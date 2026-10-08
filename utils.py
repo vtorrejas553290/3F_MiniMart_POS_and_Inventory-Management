@@ -19,10 +19,6 @@ os.makedirs(IMAGE_DIR, exist_ok=True)
 
 
 def pick_image_file():
-    """
-    Open a file dialog for the user to choose an image.
-    Returns the file path, or None if cancelled.
-    """
     path = filedialog.askopenfilename(
         title="Select Product Image",
         filetypes=[
@@ -34,10 +30,6 @@ def pick_image_file():
 
 
 def save_product_image(source_path):
-    """
-    Copy the selected image into the product_images folder
-    with a unique filename. Returns the stored path.
-    """
     if not source_path or not os.path.exists(source_path):
         return None
 
@@ -50,7 +42,6 @@ def save_product_image(source_path):
 
 
 def delete_product_image(image_path):
-    """Remove a product image file if it exists."""
     if image_path and os.path.exists(image_path):
         try:
             os.remove(image_path)
@@ -59,13 +50,31 @@ def delete_product_image(image_path):
 
 
 # ─────────────────────────────────────────────
-# WINDOW SIZING
+# WINDOW SIZING HELPERS
 # ─────────────────────────────────────────────
+
+def _requested_size(window):
+    """
+    Return (w, h) from the window's declared geometry string,
+    parsed as ints. If parsing fails, fall back to winfo reqwidth/reqheight.
+    """
+    try:
+        geom = window.geometry()           # e.g. "520x620+100+100"
+        size_part = geom.split("+")[0].split("-")[0]
+        w_str, h_str = size_part.split("x")
+        return int(w_str), int(h_str)
+    except Exception:
+        return window.winfo_reqwidth(), window.winfo_reqheight()
+
 
 def center_on_parent(window, parent):
     """
     Center a pop-up window on its parent window.
     Call AFTER widgets are built.
+
+    Uses the declared geometry (from .geometry("WxH")) rather than the
+    current rendered size — Tk reports 200x200 for windows that haven't
+    finished laying out yet, which used to collapse dialogs.
     """
     window.update_idletasks()
 
@@ -74,11 +83,14 @@ def center_on_parent(window, parent):
     parent_w = parent.winfo_width()
     parent_h = parent.winfo_height()
 
-    win_w = window.winfo_width()
-    win_h = window.winfo_height()
+    win_w, win_h = _requested_size(window)
 
     x = parent_x + (parent_w - win_w) // 2
     y = parent_y + (parent_h - win_h) // 2
+
+    # Keep inside screen bounds
+    if x < 0: x = 0
+    if y < 0: y = 0
 
     window.geometry(f"{win_w}x{win_h}+{x}+{y}")
 
@@ -86,17 +98,22 @@ def center_on_parent(window, parent):
 def center_on_screen(window):
     """
     Center a pop-up window on the screen.
+
+    Uses the declared geometry (from .geometry("WxH")) rather than the
+    current rendered size — see note in center_on_parent().
     """
     window.update_idletasks()
 
     screen_w = window.winfo_screenwidth()
     screen_h = window.winfo_screenheight()
 
-    win_w = window.winfo_width()
-    win_h = window.winfo_height()
+    win_w, win_h = _requested_size(window)
 
     x = (screen_w - win_w) // 2
     y = (screen_h - win_h) // 2
+
+    if x < 0: x = 0
+    if y < 0: y = 0
 
     window.geometry(f"{win_w}x{win_h}+{x}+{y}")
 
@@ -107,65 +124,42 @@ def center_on_screen(window):
 
 def maximize(window):
     if sys.platform.startswith("win"):
-        window.state("zoomed")                  # ---- Windows ----
+        window.state("zoomed")
     elif sys.platform == "darwin":
-        window.attributes("-zoomed", True)      # ---- macOS ----
+        window.attributes("-zoomed", True)
     else:
-        window.attributes("-zoomed", True)      # ---- Linux ----
+        window.attributes("-zoomed", True)
 
 
 # ─────────────────────────────────────────────
-# DIALOG SETUP (fix z-order + centering)
+# DIALOG SETUP
 # ─────────────────────────────────────────────
 
 def prepare_dialog(dialog, parent):
     """
-    Setup a CTkToplevel:
-      - tied to the parent window (transient)
-      - raised above the parent once
-      - modal (grabs input)
-      - centered on the PARENT window
-
-    NOTE: We do NOT toggle -topmost here — that hides the X button on Windows.
-    """
-    dialog.transient(parent)                    # ---- tie to parent ----
-    dialog.lift()                               # ---- raise above parent ----
-    dialog.grab_set()                           # ---- capture all input ----
-    dialog.focus_force()                        # ---- grab focus ----
-
-    # ---- Center AFTER the window is fully built ----
-    dialog.after(10, lambda: center_on_parent(dialog, parent))
-
-
-def prepare_dialog_screen(dialog, parent):
-    """
-    Same as prepare_dialog(), but centers the dialog on the SCREEN
-    instead of the parent window.
+    Setup a CTkToplevel tied to parent and centered on it.
     """
     dialog.transient(parent)
     dialog.lift()
     dialog.grab_set()
     dialog.focus_force()
 
-    # ---- Center on SCREEN after the window is fully built ----
+    dialog.after(10, lambda: center_on_parent(dialog, parent))
+
+
+def prepare_dialog_screen(dialog, parent):
+    """
+    Same as prepare_dialog(), but centers on the SCREEN instead.
+    """
+    dialog.transient(parent)
+    dialog.lift()
+    dialog.grab_set()
+    dialog.focus_force()
+
     dialog.after(10, lambda: center_on_screen(dialog))
 
 
-# ─────────────────────────────────────────────
-# SAFE DIALOG BUILDER (optional convenience)
-# ─────────────────────────────────────────────
-
 def make_dialog(parent, title="Dialog", size="400x400", resizable=(False, False)):
-    """
-    Create a CTkToplevel ready for building:
-      - sets title + geometry + resizable
-      - returns the dialog (not yet centered)
-
-    Usage:
-        dlg = make_dialog(self, "My Dialog", "400x300")
-        ... build widgets ...
-        prepare_dialog_screen(dlg, self)
-    """
     dialog = ctk.CTkToplevel(parent)
     dialog.title(title)
     dialog.geometry(size)

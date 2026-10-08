@@ -342,12 +342,17 @@ class ReportsTab(ctk.CTkFrame):
 
         summary_dict = dict(summary) if summary else {}
 
+        exporter = (self.user.get("full_name")
+                    or self.user.get("username")
+                    or "-")
+
         ok, result = export_sales_report(
             summary=summary_dict,
             top_products=products,
             date_from=self.date_from or None,
             date_to=self.date_to or None,
             payment_filter=self.payment_filter,
+            exporter_name=exporter,
             parent_window=self.winfo_toplevel(),
         )
 

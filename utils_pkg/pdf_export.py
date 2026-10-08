@@ -81,6 +81,7 @@ PROFIT_NEG  = colors.HexColor("#DC2626")
 def export_sales_report(summary, top_products,
                         date_from=None, date_to=None,
                         payment_filter="All",
+                        exporter_name="",
                         parent_window=None):
     default_name = _default_filename(date_from, date_to)
     path = filedialog.asksaveasfilename(
@@ -95,7 +96,8 @@ def export_sales_report(summary, top_products,
 
     try:
         _build_pdf(path, summary, top_products,
-                   date_from, date_to, payment_filter)
+                   date_from, date_to, payment_filter,
+                   exporter_name)
         return True, path
     except Exception as e:
         return False, str(e)
@@ -115,7 +117,7 @@ def _default_filename(date_from, date_to):
 # ─────────────────────────────────────────────
 
 def _build_pdf(path, summary, top_products,
-               date_from, date_to, payment_filter):
+               date_from, date_to, payment_filter, exporter_name=""):
     doc = SimpleDocTemplate(
         path,
         pagesize=letter,
@@ -161,8 +163,8 @@ def _build_pdf(path, summary, top_products,
     gcash_total = summary.get("gcash_total", 0) or 0
 
     summary_data = [
-        ["Total Sales", f"₱{total_sales:,.2f}", "Transactions", f"{count:,}"],
-        ["Cash",        f"₱{cash_total:,.2f}",  "GCash",        f"₱{gcash_total:,.2f}"],
+        ["Total Sales", f"PHP {total_sales:,.2f}", "Transactions", f"{count:,}"],
+        ["Cash",        f"PHP {cash_total:,.2f}", "GCash",        f"PHP {gcash_total:,.2f}"],
     ]
     summary_table = Table(summary_data,
                           colWidths=[1.3 * inch, 1.6 * inch,
@@ -217,10 +219,10 @@ def _build_pdf(path, summary, top_products,
                 _truncate(display, 40),
                 p.get("product_code") or "-",
                 f"{p.get('units_sold', 0):,}",
-                f"₱{p.get('avg_cost', 0):.2f}",
-                f"₱{p.get('avg_price', 0):.2f}",
-                f"₱{p.get('profit', 0):.2f}",
-                f"₱{p.get('revenue', 0):,.2f}",
+                f"PHP {p.get('avg_cost', 0):.2f}",
+                f"PHP {p.get('avg_price', 0):.2f}",
+                f"PHP {p.get('profit', 0):.2f}",
+                f"PHP {p.get('revenue', 0):,.2f}",
             ])
 
         col_widths = [
@@ -268,19 +270,21 @@ def _build_pdf(path, summary, top_products,
         table.setStyle(TableStyle(style_cmds))
         story.append(table)
 
-    # ═════════════════════════════════════════
-    # FOOTER NOTE
+      # ═════════════════════════════════════════
+    # FOOTER
     # ═════════════════════════════════════════
 
-    story.append(Spacer(1, 28))
+    story.append(Spacer(1, 24))
     story.append(Paragraph(
-        "Cost and Price columns are weighted averages across all batches "
-        "sold in the selected period. Profit = Revenue − (Cost × Units Sold).",
+        f"Exported by: {exporter_name or '-'}",
+        styles["3f_footnote"],
+    ))
+    story.append(Paragraph(
+        f"Exported on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         styles["3f_footnote"],
     ))
 
     doc.build(story)
-
 
 # ─────────────────────────────────────────────
 # HELPERS
