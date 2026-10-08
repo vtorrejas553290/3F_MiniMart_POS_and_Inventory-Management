@@ -1,17 +1,17 @@
 # ─────────────────────────────────────────────
-# INVENTORY VIEW (batch-aggregated + movement report)
+# INVENTORY VIEW (batch-aggregated)
 # ─────────────────────────────────────────────
 
-from datetime import datetime, timedelta
+from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox
+from views.inventory_report_dialog import InventoryReportDialog
 
 from controllers.auth_controller import AuthController
 from controllers.inventory_controller import InventoryController
 from views.product_dialogs import (
     ProductDialog, RestockDialog, BatchesDialog, CategoryDialog,
 )
-from views.inventory_report_dialog import InventoryReportDialog
 from config import (
     font, font_bold,
     BG_MAIN, BG_CARD, BG_INPUT, BG_ROW_ALT, BORDER,
@@ -34,22 +34,11 @@ class InventoryView(ctk.CTkFrame):
         self.show_archived = False
         self.search_query = ""
 
-        # ---- New filter state ----
-        self.filter_mode = "all"       # "all" | "low"
-        self.date_from = ""
-        self.date_to = ""
-        self.active_range_button = None
-        self._programmatic_set = False
-
         self.current_page = 1
         self.total_pages = 1
 
         self._build()
         self._load()
-
-    # ─────────────────────────────────────────────
-    # BUILD
-    # ─────────────────────────────────────────────
 
     def _build(self):
         # ---- Header ----
@@ -91,16 +80,12 @@ class InventoryView(ctk.CTkFrame):
                           fg_color=ACCENT, hover_color=ACCENT_HOVER,
                           command=self._add_category_dialog).pack(side="right", padx=(6, 0))
 
-        # ═════════════════════════════════════════
-        # FILTER CARD
-        # ═════════════════════════════════════════
-
+        # ---- Filter card ----
         filter_card = ctk.CTkFrame(self, fg_color=BG_CARD,
                                    corner_radius=12, border_width=1,
                                    border_color=BORDER)
         filter_card.pack(fill="x", padx=20, pady=(0, 10))
 
-        # ---- Row 1: search + category + archived ----
         row1 = ctk.CTkFrame(filter_card, fg_color="transparent")
         row1.pack(fill="x", padx=16, pady=(14, 6))
 
@@ -148,108 +133,27 @@ class InventoryView(ctk.CTkFrame):
                         font=font(12),
                         command=self._toggle_archived).pack(side="left")
 
-        # ---- Row 2: quick filter mode + count ----
         row2 = ctk.CTkFrame(filter_card, fg_color="transparent")
-        row2.pack(fill="x", padx=16, pady=(0, 6))
+        row2.pack(fill="x", padx=16, pady=(0, 14))
 
-        ctk.CTkLabel(row2, text="Filter",
-                     font=font_bold(11),
-                     text_color=FG_SECONDARY).pack(side="left", padx=(0, 10))
+        ctk.CTkButton(row2, text="All Products",
+                      width=120, height=32, corner_radius=8, font=font(11),
+                      fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+                      text_color=NEUTRAL_TEXT,
+                      command=self._load).pack(side="left", padx=(0, 6))
 
-        self.btn_all = ctk.CTkButton(
-            row2, text="All Products", width=120, height=32,
-            corner_radius=8, font=font(11),
-            fg_color=ACCENT, hover_color=ACCENT_HOVER,
-            text_color="#FFFFFF",
-            command=lambda: self._set_filter_mode("all"),
-        )
-        self.btn_all.pack(side="left", padx=(0, 6))
+        ctk.CTkButton(row2, text="Low Stock Only",
+                      width=120, height=32, corner_radius=8, font=font(11),
+                      fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+                      text_color=NEUTRAL_TEXT,
+                      command=self._load_low).pack(side="left")
 
-        self.btn_low = ctk.CTkButton(
-            row2, text="Low Stock Only", width=120, height=32,
-            corner_radius=8, font=font(11),
-            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
-            text_color=NEUTRAL_TEXT,
-            command=lambda: self._set_filter_mode("low"),
-        )
-        self.btn_low.pack(side="left")
-
-        # ---- Row 3: date range ----
-        row3 = ctk.CTkFrame(filter_card, fg_color="transparent")
-        row3.pack(fill="x", padx=16, pady=(0, 14))
-
-        ctk.CTkLabel(row3, text="Date Range",
-                     font=font_bold(11),
-                     text_color=FG_SECONDARY).pack(side="left", padx=(0, 10))
-
-        self.date_from_var = ctk.StringVar()
-        self.date_from_var.trace_add("write", self._on_date_change)
-
-        self.date_from_e = ctk.CTkEntry(
-            row3, placeholder_text="From YYYY-MM-DD",
-            textvariable=self.date_from_var,
-            width=140, height=32, corner_radius=8, font=font(11),
-            fg_color=BG_INPUT, border_color=BORDER, border_width=1,
-        )
-        self.date_from_e.pack(side="left", padx=(0, 6))
-
-        self.date_to_var = ctk.StringVar()
-        self.date_to_var.trace_add("write", self._on_date_change)
-
-        self.date_to_e = ctk.CTkEntry(
-            row3, placeholder_text="To YYYY-MM-DD",
-            textvariable=self.date_to_var,
-            width=140, height=32, corner_radius=8, font=font(11),
-            fg_color=BG_INPUT, border_color=BORDER, border_width=1,
-        )
-        self.date_to_e.pack(side="left", padx=(0, 10))
-
-        # ---- Quick ranges ----
-        self.btn_today = ctk.CTkButton(
-            row3, text="Today", width=80, height=32,
-            corner_radius=8, font=font(11),
-            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
-            text_color=NEUTRAL_TEXT,
-            command=self._range_today,
-        )
-        self.btn_today.pack(side="left", padx=2)
-
-        self.btn_7days = ctk.CTkButton(
-            row3, text="Last 7 Days", width=100, height=32,
-            corner_radius=8, font=font(11),
-            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
-            text_color=NEUTRAL_TEXT,
-            command=self._range_7_days,
-        )
-        self.btn_7days.pack(side="left", padx=2)
-
-        self.btn_month = ctk.CTkButton(
-            row3, text="This Month", width=100, height=32,
-            corner_radius=8, font=font(11),
-            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
-            text_color=NEUTRAL_TEXT,
-            command=self._range_this_month,
-        )
-        self.btn_month.pack(side="left", padx=2)
-
-        self.btn_clear_range = ctk.CTkButton(
-            row3, text="Clear Dates", width=100, height=32,
-            corner_radius=8, font=font(11),
-            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
-            text_color=NEUTRAL_TEXT,
-            command=self._clear_dates,
-        )
-        self.btn_clear_range.pack(side="left", padx=2)
-
-        self.count_label = ctk.CTkLabel(row3, text="",
+        self.count_label = ctk.CTkLabel(row2, text="",
                                         font=font_bold(11),
                                         text_color=FG_SECONDARY)
         self.count_label.pack(side="right", padx=(0, 4))
 
-        # ═════════════════════════════════════════
-        # LIST CARD
-        # ═════════════════════════════════════════
-
+        # ---- List card ----
         list_card = ctk.CTkFrame(self, fg_color=BG_CARD,
                                  corner_radius=12, border_width=1,
                                  border_color=BORDER)
@@ -284,10 +188,7 @@ class InventoryView(ctk.CTkFrame):
         )
         self.next_btn.pack(side="right")
 
-    # ─────────────────────────────────────────────
-    # PAGINATION
-    # ─────────────────────────────────────────────
-
+    # ---- Pagination ----
     def _change_page(self, delta):
         new_page = self.current_page + delta
         if 1 <= new_page <= self.total_pages:
@@ -295,28 +196,21 @@ class InventoryView(ctk.CTkFrame):
             self._load()
 
     def _update_pager(self):
-        self.page_label.configure(
-            text=f"Page {self.current_page} of {self.total_pages}"
-        )
-
+        self.page_label.configure(text=f"Page {self.current_page} of {self.total_pages}")
         if self.current_page <= 1:
-            self.prev_btn.configure(state="disabled",
-                                    fg_color=BG_INPUT, text_color=FG_MUTED)
+            self.prev_btn.configure(state="disabled", fg_color=BG_INPUT,
+                                    text_color=FG_MUTED)
         else:
-            self.prev_btn.configure(state="normal",
-                                    fg_color=NEUTRAL, text_color=NEUTRAL_TEXT)
-
+            self.prev_btn.configure(state="normal", fg_color=NEUTRAL,
+                                    text_color=NEUTRAL_TEXT)
         if self.current_page >= self.total_pages:
-            self.next_btn.configure(state="disabled",
-                                    fg_color=BG_INPUT, text_color=FG_MUTED)
+            self.next_btn.configure(state="disabled", fg_color=BG_INPUT,
+                                    text_color=FG_MUTED)
         else:
-            self.next_btn.configure(state="normal",
-                                    fg_color=NEUTRAL, text_color=NEUTRAL_TEXT)
+            self.next_btn.configure(state="normal", fg_color=NEUTRAL,
+                                    text_color=NEUTRAL_TEXT)
 
-    # ─────────────────────────────────────────────
-    # SEARCH
-    # ─────────────────────────────────────────────
-
+    # ---- Filters ----
     def _on_search_change(self, *args):
         self.search_query = self.search_var.get().strip().lower()
         self.current_page = 1
@@ -324,27 +218,6 @@ class InventoryView(ctk.CTkFrame):
 
     def _clear_search(self):
         self.search_var.set("")
-
-    # ─────────────────────────────────────────────
-    # FILTER MODE (All / Low)
-    # ─────────────────────────────────────────────
-
-    def _set_filter_mode(self, mode):
-        self.filter_mode = mode
-        self.current_page = 1
-
-        if mode == "low":
-            self.btn_low.configure(fg_color=ACCENT, text_color="#FFFFFF")
-            self.btn_all.configure(fg_color=NEUTRAL, text_color=NEUTRAL_TEXT)
-        else:
-            self.btn_all.configure(fg_color=ACCENT, text_color="#FFFFFF")
-            self.btn_low.configure(fg_color=NEUTRAL, text_color=NEUTRAL_TEXT)
-
-        self._load()
-
-    # ─────────────────────────────────────────────
-    # CATEGORY / ARCHIVED
-    # ─────────────────────────────────────────────
 
     def _on_category_change(self, choice):
         if choice == "All Categories":
@@ -363,101 +236,21 @@ class InventoryView(ctk.CTkFrame):
         self.current_page = 1
         self._load()
 
-    # ─────────────────────────────────────────────
-    # DATE RANGE
-    # ─────────────────────────────────────────────
-
-    def _on_date_change(self, *args):
-        if self._programmatic_set:
-            return
-
-        d_from = self.date_from_var.get().strip()
-        d_to   = self.date_to_var.get().strip()
-
-        if d_from and len(d_from) < 10:
-            return
-        if d_to and len(d_to) < 10:
-            return
-        if d_from and not self._is_valid_date(d_from):
-            return
-        if d_to and not self._is_valid_date(d_to):
-            return
-        if d_from and d_to and d_from > d_to:
-            return
-
-        self._clear_button_highlight()
-        self.date_from = d_from
-        self.date_to = d_to
-
-    def _is_valid_date(self, text):
-        try:
-            datetime.strptime(text, "%Y-%m-%d")
-            return True
-        except ValueError:
-            return False
-
-    def _highlight_button(self, button):
-        if self.active_range_button is not None:
-            self.active_range_button.configure(
-                fg_color=NEUTRAL, text_color=NEUTRAL_TEXT,
-            )
-        if button is not None:
-            button.configure(fg_color=ACCENT, text_color="#FFFFFF")
-        self.active_range_button = button
-
-    def _clear_button_highlight(self):
-        if self.active_range_button is not None:
-            self.active_range_button.configure(
-                fg_color=NEUTRAL, text_color=NEUTRAL_TEXT,
-            )
-        self.active_range_button = None
-
-    def _range_today(self):
-        today = datetime.now().strftime("%Y-%m-%d")
-        self._set_dates_programmatically(today, today, self.btn_today)
-
-    def _range_7_days(self):
-        today = datetime.now()
-        start = (today - timedelta(days=6)).strftime("%Y-%m-%d")
-        end = today.strftime("%Y-%m-%d")
-        self._set_dates_programmatically(start, end, self.btn_7days)
-
-    def _range_this_month(self):
-        today = datetime.now()
-        start = today.replace(day=1).strftime("%Y-%m-%d")
-        end = today.strftime("%Y-%m-%d")
-        self._set_dates_programmatically(start, end, self.btn_month)
-
-    def _clear_dates(self):
-        self._set_dates_programmatically("", "", self.btn_clear_range)
-
-    def _set_dates_programmatically(self, d_from, d_to, button):
-        self._programmatic_set = True
-        self.date_from_var.set(d_from)
-        self.date_to_var.set(d_to)
-        self._programmatic_set = False
-
-        self.date_from = d_from
-        self.date_to = d_to
-        self._highlight_button(button)
-
-    # ─────────────────────────────────────────────
-    # LOAD
-    # ─────────────────────────────────────────────
-
+    # ---- Load ----
     def _load(self):
-        if self.filter_mode == "low":
-            products = InventoryController.list_low_stock()
-            # Apply archived filter manually (low stock already excludes archived)
-        else:
-            products = InventoryController.list_by_category(
-                self.selected_category_id,
-                include_archived=self.show_archived,
-            )
-
+        products = InventoryController.list_by_category(
+            self.selected_category_id,
+            include_archived=self.show_archived,
+        )
         if self.search_query:
             products = [p for p in products if self._matches_search(p)]
+        self._render(products)
 
+    def _load_low(self):
+        products = InventoryController.list_low_stock()
+        if self.search_query:
+            products = [p for p in products if self._matches_search(p)]
+        self.current_page = 1
         self._render(products)
 
     def _matches_search(self, p):
@@ -472,10 +265,7 @@ class InventoryView(ctk.CTkFrame):
         ]
         return any(q in f for f in fields)
 
-    # ─────────────────────────────────────────────
-    # RENDER
-    # ─────────────────────────────────────────────
-
+    # ---- Render ----
     def _render(self, products):
         for w in self.list_frame.winfo_children():
             w.destroy()
@@ -491,31 +281,32 @@ class InventoryView(ctk.CTkFrame):
         end = start + self.PAGE_SIZE
         page_products = products[start:end]
 
-        # ---- Header ----
         header = ctk.CTkFrame(self.list_frame, fg_color="transparent")
         header.pack(fill="x", pady=(4, 8))
 
+        # ---- Arranged columns: Brand, Name, Size separated ----
         cols = [
-            ("Code",        90),
-            ("Name",        200),
-            ("Unit",        50),
-            ("Category",    100),
-            ("Supplier",    120),
-            ("Price",       75),
-            ("Stock",       55),
-            ("Expires",     100),
-            ("Status",      90),
+            ("Code",     70),
+            ("Brand",    90),
+            ("Name",    130),
+            ("Size",     60),
+            ("Unit",     45),
+            ("Category", 90),
+            ("Supplier",100),
+            ("Price",    70),
+            ("Stock",    50),
+            ("Expires",  90),
+            ("Status",   85),
         ]
         for text, width in cols:
-            ctk.CTkLabel(header, text=text, width=width,
-                         anchor="w",
+            ctk.CTkLabel(header, text=text, width=width, anchor="w",
                          font=font_bold(11),
-                         text_color=FG_SECONDARY).pack(side="left", padx=3)
+                         text_color=FG_SECONDARY).pack(side="left", padx=2)
 
         if not page_products:
-            msg = "No products match your filters." if (self.search_query or self.filter_mode == "low") else "No products to show."
-            ctk.CTkLabel(self.list_frame, text=msg,
-                         font=font(12),
+            msg = "No products match your search." if self.search_query \
+                  else "No products to show."
+            ctk.CTkLabel(self.list_frame, text=msg, font=font(12),
                          text_color=FG_MUTED).pack(pady=30)
             self._update_pager()
             return
@@ -530,31 +321,40 @@ class InventoryView(ctk.CTkFrame):
         row = ctk.CTkFrame(self.list_frame, fg_color=bg, corner_radius=6)
         row.pack(fill="x", pady=2)
 
+        # ---- Data columns (packed LEFT first so they define the row height) ----
         ctk.CTkLabel(row, text=p["product_code"] or "-",
-                     width=90, anchor="w", font=font(11),
-                     text_color=FG_SECONDARY).pack(side="left", padx=3, pady=6)
+                     width=70, anchor="w", font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=2, pady=8)
 
-        display_name = self._display_name(p)
-        ctk.CTkLabel(row, text=display_name, width=200, anchor="w",
-                     font=font_bold(12),
-                     text_color=FG_PRIMARY).pack(side="left", padx=3)
+        ctk.CTkLabel(row, text=p["brand"] or "-",
+                     width=90, anchor="w", font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=2)
+
+        ctk.CTkLabel(row, text=p["name"] or "-",
+                     width=130, anchor="w", font=font_bold(12),
+                     text_color=FG_PRIMARY).pack(side="left", padx=2)
+
+        ctk.CTkLabel(row, text=p["size"] or "-",
+                     width=60, anchor="w", font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=2)
 
         ctk.CTkLabel(row, text=p["unit"] or "-",
-                     width=50, anchor="w", font=font(11),
-                     text_color=FG_SECONDARY).pack(side="left", padx=3)
+                     width=45, anchor="w", font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=2)
 
         ctk.CTkLabel(row, text=p["category_name"] or "-",
-                     width=100, anchor="w", font=font(11),
-                     text_color=FG_PRIMARY).pack(side="left", padx=3)
+                     width=90, anchor="w", font=font(11),
+                     text_color=FG_PRIMARY).pack(side="left", padx=2)
 
         ctk.CTkLabel(row, text=p["supplier_name"] or "-",
-                     width=120, anchor="w", font=font(11),
-                     text_color=FG_SECONDARY).pack(side="left", padx=3)
+                     width=100, anchor="w", font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=2)
 
         ctk.CTkLabel(row, text=f"₱{p['price']:.2f}",
-                     width=75, anchor="w", font=font(11),
-                     text_color=FG_PRIMARY).pack(side="left", padx=3)
+                     width=70, anchor="w", font=font(11),
+                     text_color=FG_PRIMARY).pack(side="left", padx=2)
 
+        # ---- Stock color ----
         stock_qty = p["stock_qty"]
         low_level = p["low_stock_level"] or 0
 
@@ -566,60 +366,61 @@ class InventoryView(ctk.CTkFrame):
             stock_color = FG_PRIMARY
 
         ctk.CTkLabel(row, text=str(stock_qty),
-                     width=55, anchor="w", font=font_bold(11),
-                     text_color=stock_color).pack(side="left", padx=3)
+                     width=50, anchor="w", font=font_bold(11),
+                     text_color=stock_color).pack(side="left", padx=2)
 
+        # ---- Earliest expiration ----
         exp_text, exp_color = self._expiration_display(p["earliest_expiration"])
-        ctk.CTkLabel(row, text=exp_text, width=100, anchor="w",
+        ctk.CTkLabel(row, text=exp_text, width=90, anchor="w",
                      font=font(11),
-                     text_color=exp_color).pack(side="left", padx=3)
+                     text_color=exp_color).pack(side="left", padx=2)
 
+        # ---- Status ----
         if stock_qty > 0:
             status_text, status_color = "Available", SUCCESS
         else:
             status_text, status_color = "Not Available", DANGER
 
-        ctk.CTkLabel(row, text=status_text, width=90, anchor="w",
+        ctk.CTkLabel(row, text=status_text, width=85, anchor="w",
                      font=font_bold(11),
-                     text_color=status_color).pack(side="left", padx=3)
+                     text_color=status_color).pack(side="left", padx=2)
 
-        if not AuthController.is_admin():
-            return
+        # ---- Actions frame (packed LAST on the right) ----
+        if AuthController.is_admin():
+            actions = ctk.CTkFrame(row, fg_color="transparent")
+            actions.pack(side="right", padx=4, pady=4)
 
-        actions = ctk.CTkFrame(row, fg_color="transparent")
-        actions.pack(side="right", padx=4)
+            if p["is_archived"]:
+                ctk.CTkButton(actions, text="Restore", width=70, height=28,
+                              corner_radius=6, font=font_bold(11),
+                              fg_color=BRAND_GREEN, hover_color="#1E9040",
+                              command=lambda prod=p: self._restore(prod)
+                              ).pack(side="left", padx=2)
+            else:
+                ctk.CTkButton(actions, text="Batches", width=70, height=28,
+                              corner_radius=6, font=font_bold(11),
+                              fg_color="#7C3AED", hover_color="#6D28D9",
+                              command=lambda prod=p: self._view_batches(prod)
+                              ).pack(side="left", padx=2)
 
-        if p["is_archived"]:
-            ctk.CTkButton(actions, text="Restore", width=70, height=28,
-                          corner_radius=6, font=font_bold(11),
-                          fg_color=BRAND_GREEN, hover_color="#1E9040",
-                          command=lambda prod=p: self._restore(prod)
-                          ).pack(side="left", padx=2)
-        else:
-            ctk.CTkButton(actions, text="Batches", width=70, height=28,
-                          corner_radius=6, font=font_bold(11),
-                          fg_color="#7C3AED", hover_color="#6D28D9",
-                          command=lambda prod=p: self._view_batches(prod)
-                          ).pack(side="left", padx=2)
+                ctk.CTkButton(actions, text="Restock", width=70, height=28,
+                              corner_radius=6, font=font_bold(11),
+                              fg_color=BRAND_YELLOW, hover_color="#E0B22E",
+                              text_color="#0F172A",
+                              command=lambda prod=p: self._restock(prod)
+                              ).pack(side="left", padx=2)
 
-            ctk.CTkButton(actions, text="Restock", width=70, height=28,
-                          corner_radius=6, font=font_bold(11),
-                          fg_color=BRAND_YELLOW, hover_color="#E0B22E",
-                          text_color="#0F172A",
-                          command=lambda prod=p: self._restock(prod)
-                          ).pack(side="left", padx=2)
+                ctk.CTkButton(actions, text="Edit", width=55, height=28,
+                              corner_radius=6, font=font_bold(11),
+                              fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                              command=lambda prod=p: self._edit_dialog(prod)
+                              ).pack(side="left", padx=2)
 
-            ctk.CTkButton(actions, text="Edit", width=55, height=28,
-                          corner_radius=6, font=font_bold(11),
-                          fg_color=ACCENT, hover_color=ACCENT_HOVER,
-                          command=lambda prod=p: self._edit_dialog(prod)
-                          ).pack(side="left", padx=2)
-
-            ctk.CTkButton(actions, text="Archive", width=65, height=28,
-                          corner_radius=6, font=font_bold(11),
-                          fg_color=DANGER, hover_color=DANGER_HOVER,
-                          command=lambda prod=p: self._archive(prod)
-                          ).pack(side="left", padx=2)
+                ctk.CTkButton(actions, text="Archive", width=65, height=28,
+                              corner_radius=6, font=font_bold(11),
+                              fg_color=DANGER, hover_color=DANGER_HOVER,
+                              command=lambda prod=p: self._archive(prod)
+                              ).pack(side="left", padx=2)
 
     @staticmethod
     def _display_name(p):
@@ -641,10 +442,7 @@ class InventoryView(ctk.CTkFrame):
             return f"{expiration_date} ({days_left}d)", "#D97706"
         return expiration_date, FG_SECONDARY
 
-    # ─────────────────────────────────────────────
-    # ACTIONS
-    # ─────────────────────────────────────────────
-
+    # ---- Actions ----
     def _restock(self, product):
         RestockDialog(self.winfo_toplevel(), self.user, product,
                       on_save=self._load)
@@ -678,10 +476,7 @@ class InventoryView(ctk.CTkFrame):
         else:
             messagebox.showerror("Error", msg)
 
-    # ─────────────────────────────────────────────
-    # DIALOGS
-    # ─────────────────────────────────────────────
-
+    # ---- Dialogs ----
     def _add_dialog(self):
         ProductDialog(self.winfo_toplevel(), self.user, None,
                       on_save=self._after_product_saved)
@@ -703,11 +498,8 @@ class InventoryView(ctk.CTkFrame):
         self.category_menu.configure(values=self.category_names)
         self._load()
 
-    # ─────────────────────────────────────────────
-    # EXPORT PDF — uses current filter state
-    # ─────────────────────────────────────────────
-
     def _export_pdf(self):
+        """Build the report data using the CURRENT filters, then open preview."""
         if not AuthController.is_admin():
             return
 

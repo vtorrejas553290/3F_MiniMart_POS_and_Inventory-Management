@@ -19,7 +19,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 
 # ─────────────────────────────────────────────
-# FONT REGISTRATION (needed for the ₱ symbol)
+# FONT REGISTRATION (for ₱)
 # ─────────────────────────────────────────────
 
 FONT_REGULAR = "Helvetica"
@@ -27,15 +27,10 @@ FONT_BOLD    = "Helvetica-Bold"
 FONT_ITALIC  = "Helvetica-Oblique"
 
 def _register_fonts():
-    """
-    Try to register DejaVuSans (bundled with ReportLab) so the ₱ glyph
-    renders correctly. Falls back to Helvetica if anything goes wrong.
-    """
     global FONT_REGULAR, FONT_BOLD, FONT_ITALIC
     try:
         import reportlab
-        rl_dir = os.path.dirname(reportlab.__file__)
-        fonts_dir = os.path.join(rl_dir, "fonts")
+        fonts_dir = os.path.join(os.path.dirname(reportlab.__file__), "fonts")
 
         regular = os.path.join(fonts_dir, "DejaVuSans.ttf")
         bold    = os.path.join(fonts_dir, "DejaVuSans-Bold.ttf")
@@ -44,16 +39,13 @@ def _register_fonts():
         if os.path.exists(regular):
             pdfmetrics.registerFont(TTFont("DejaVu", regular))
             FONT_REGULAR = "DejaVu"
-
         if os.path.exists(bold):
             pdfmetrics.registerFont(TTFont("DejaVu-Bold", bold))
             FONT_BOLD = "DejaVu-Bold"
-
         if os.path.exists(italic):
             pdfmetrics.registerFont(TTFont("DejaVu-Italic", italic))
             FONT_ITALIC = "DejaVu-Italic"
     except Exception:
-        # Silent fallback — worst case, ₱ shows as a box
         pass
 
 
@@ -103,6 +95,10 @@ def export_sales_report(summary, top_products,
         return False, str(e)
 
 
+# ─────────────────────────────────────────────
+# FILENAME
+# ─────────────────────────────────────────────
+
 def _default_filename(date_from, date_to):
     today = datetime.now().strftime("%Y%m%d")
     if date_from and date_to and date_from == date_to:
@@ -117,7 +113,8 @@ def _default_filename(date_from, date_to):
 # ─────────────────────────────────────────────
 
 def _build_pdf(path, summary, top_products,
-               date_from, date_to, payment_filter, exporter_name=""):
+               date_from, date_to, payment_filter,
+               exporter_name=""):
     doc = SimpleDocTemplate(
         path,
         pagesize=letter,
@@ -163,8 +160,8 @@ def _build_pdf(path, summary, top_products,
     gcash_total = summary.get("gcash_total", 0) or 0
 
     summary_data = [
-        ["Total Sales", f"PHP {total_sales:,.2f}", "Transactions", f"{count:,}"],
-        ["Cash",        f"PHP {cash_total:,.2f}", "GCash",        f"PHP {gcash_total:,.2f}"],
+        ["Total Sales", f"₱{total_sales:,.2f}", "Transactions", f"{count:,}"],
+        ["Cash",        f"₱{cash_total:,.2f}",  "GCash",        f"₱{gcash_total:,.2f}"],
     ]
     summary_table = Table(summary_data,
                           colWidths=[1.3 * inch, 1.6 * inch,
@@ -219,10 +216,10 @@ def _build_pdf(path, summary, top_products,
                 _truncate(display, 40),
                 p.get("product_code") or "-",
                 f"{p.get('units_sold', 0):,}",
-                f"PHP {p.get('avg_cost', 0):.2f}",
-                f"PHP {p.get('avg_price', 0):.2f}",
-                f"PHP {p.get('profit', 0):.2f}",
-                f"PHP {p.get('revenue', 0):,.2f}",
+                f"₱{p.get('avg_cost', 0):.2f}",
+                f"₱{p.get('avg_price', 0):.2f}",
+                f"₱{p.get('profit', 0):.2f}",
+                f"₱{p.get('revenue', 0):,.2f}",
             ])
 
         col_widths = [
@@ -270,11 +267,11 @@ def _build_pdf(path, summary, top_products,
         table.setStyle(TableStyle(style_cmds))
         story.append(table)
 
-      # ═════════════════════════════════════════
+    # ═════════════════════════════════════════
     # FOOTER
     # ═════════════════════════════════════════
 
-    story.append(Spacer(1, 24))
+    story.append(Spacer(1, 28))
     story.append(Paragraph(
         f"Exported by: {exporter_name or '-'}",
         styles["3f_footnote"],
@@ -285,6 +282,7 @@ def _build_pdf(path, summary, top_products,
     ))
 
     doc.build(story)
+
 
 # ─────────────────────────────────────────────
 # HELPERS
@@ -316,69 +314,34 @@ def _make_styles():
     styles = getSampleStyleSheet()
 
     styles.add(ParagraphStyle(
-        name="3f_brand",
-        parent=styles["Normal"],
-        fontName=FONT_BOLD,
-        fontSize=22,
-        leading=26,                     # <-- fixes the overlap
-        textColor=BRAND_GREEN,
-        alignment=TA_LEFT,
-        spaceAfter=0,
+        name="3f_brand", parent=styles["Normal"],
+        fontName=FONT_BOLD, fontSize=22, leading=26,
+        textColor=BRAND_GREEN, alignment=TA_LEFT,
     ))
-
     styles.add(ParagraphStyle(
-        name="3f_title",
-        parent=styles["Normal"],
-        fontName=FONT_BOLD,
-        fontSize=15,
-        leading=18,
-        textColor=FG_PRIMARY,
-        alignment=TA_LEFT,
-        spaceAfter=0,
+        name="3f_title", parent=styles["Normal"],
+        fontName=FONT_BOLD, fontSize=15, leading=18,
+        textColor=FG_PRIMARY, alignment=TA_LEFT,
     ))
-
     styles.add(ParagraphStyle(
-        name="3f_subtitle",
-        parent=styles["Normal"],
-        fontName=FONT_REGULAR,
-        fontSize=9,
-        leading=12,
-        textColor=FG_MUTED,
-        alignment=TA_LEFT,
-        spaceAfter=0,
+        name="3f_subtitle", parent=styles["Normal"],
+        fontName=FONT_REGULAR, fontSize=9, leading=12,
+        textColor=FG_MUTED, alignment=TA_LEFT,
     ))
-
     styles.add(ParagraphStyle(
-        name="3f_section",
-        parent=styles["Normal"],
-        fontName=FONT_BOLD,
-        fontSize=12,
-        leading=15,
-        textColor=FG_PRIMARY,
-        alignment=TA_LEFT,
-        spaceAfter=0,
+        name="3f_section", parent=styles["Normal"],
+        fontName=FONT_BOLD, fontSize=12, leading=15,
+        textColor=FG_PRIMARY, alignment=TA_LEFT,
     ))
-
     styles.add(ParagraphStyle(
-        name="3f_empty",
-        parent=styles["Normal"],
-        fontName=FONT_ITALIC,
-        fontSize=10,
-        leading=13,
-        textColor=FG_MUTED,
-        alignment=TA_LEFT,
-        spaceAfter=0,
+        name="3f_empty", parent=styles["Normal"],
+        fontName=FONT_ITALIC, fontSize=10, leading=13,
+        textColor=FG_MUTED, alignment=TA_LEFT,
     ))
-
     styles.add(ParagraphStyle(
-        name="3f_footnote",
-        parent=styles["Normal"],
-        fontName=FONT_ITALIC,
-        fontSize=8,
-        leading=11,
-        textColor=FG_MUTED,
-        alignment=TA_LEFT,
-        spaceAfter=0,
+        name="3f_footnote", parent=styles["Normal"],
+        fontName=FONT_ITALIC, fontSize=8, leading=11,
+        textColor=FG_MUTED, alignment=TA_LEFT,
     ))
 
     return styles

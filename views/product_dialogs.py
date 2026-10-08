@@ -709,7 +709,13 @@ class BatchesDialog(ctk.CTkToplevel):
             messagebox.showerror("Error", msg)
 
     def _edit(self, batch):
-        EditBatchDialog(self, self.user, batch, on_save=self._after_edit)
+        EditBatchDialog(
+            self,
+            self.user,
+            batch,
+            on_save=self._after_edit,
+            product_name=self.product.get("name") or "",
+        )
 
     def _after_edit(self):
         self._render()
@@ -722,15 +728,16 @@ class BatchesDialog(ctk.CTkToplevel):
 
 class EditBatchDialog(ctk.CTkToplevel):
 
-    def __init__(self, parent, user, batch, on_save):
+    def __init__(self, parent, user, batch, on_save, product_name=""):
         super().__init__(parent)
         self.parent = parent
         self.user = user
         self.batch = batch
         self.on_save = on_save
+        self.product_name = product_name
 
         self.title(f"Edit {batch['batch_no']}")
-        self.geometry("380x460")
+        self.geometry("400x460")
         self.resizable(False, False)
         self.configure(fg_color=BG_MAIN)
         self._build()
@@ -743,7 +750,10 @@ class EditBatchDialog(ctk.CTkToplevel):
                      font=font_bold(15),
                      text_color=FG_PRIMARY).pack(pady=(16, 2))
 
-        ctk.CTkLabel(self, text=b["batch_no"],
+        subtitle_parts = [b["batch_no"]]
+        if self.product_name:
+            subtitle_parts.insert(0, self.product_name)
+        ctk.CTkLabel(self, text="  •  ".join(subtitle_parts),
                      font=font(11),
                      text_color=FG_SECONDARY).pack(pady=(0, 12))
 
@@ -790,16 +800,21 @@ class EditBatchDialog(ctk.CTkToplevel):
         btn_row = ctk.CTkFrame(self, fg_color="transparent")
         btn_row.pack(pady=(6, 16))
 
-        ctk.CTkButton(btn_row, text="Cancel", width=100, height=36,
+        ctk.CTkButton(btn_row, text="Cancel", width=90, height=36,
                       corner_radius=8, font=font_bold(12),
                       fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
                       text_color=NEUTRAL_TEXT,
-                      command=self.destroy).pack(side="left", padx=6)
+                      command=self.destroy).pack(side="left", padx=4)
 
-        ctk.CTkButton(btn_row, text="Save", width=140, height=36,
+        ctk.CTkButton(btn_row, text="Discard", width=100, height=36,
+                      corner_radius=8, font=font_bold(12),
+                      fg_color=DANGER, hover_color=DANGER_HOVER,
+                      command=self._discard).pack(side="left", padx=4)
+
+        ctk.CTkButton(btn_row, text="Save", width=120, height=36,
                       corner_radius=8, font=font_bold(12),
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
-                      command=self._save).pack(side="left", padx=6)
+                      command=self._save).pack(side="left", padx=4)
 
     def _save(self):
         try:
@@ -838,6 +853,23 @@ class EditBatchDialog(ctk.CTkToplevel):
             quantity=qty,
             cost_price=cost,
             expiration_date=expiration,
+        )
+        if ok:
+            self.on_save()
+            self.destroy()
+        else:
+            messagebox.showerror("Error", msg)
+
+    def _discard(self):
+        if not messagebox.askyesno(
+            "Discard Batch",
+            f"Set quantity of {self.batch['batch_no']} to 0?\n\n"
+            "Use this when the stock is physically thrown away."
+        ):
+            return
+
+        ok, msg = InventoryController.discard_batch(
+            self.user, self.batch["batch_id"]
         )
         if ok:
             self.on_save()
@@ -932,7 +964,7 @@ class CategoryDialog(ctk.CTkToplevel):
 
         ok, msg = InventoryController.add_category(self.user, name, desc)
         if not ok:
-            messagebox.showerror("Error", msg)  
+            messagebox.showerror("Error", msg)
             return
 
         self.name_e.delete(0, "end")
