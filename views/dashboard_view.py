@@ -41,10 +41,7 @@ class DashboardView(ctk.CTkFrame):
     # ─────────────────────────────────────────────
 
     def _build(self):
-        # ═════════════════════════════════════════
-        # HEADER
-        # ═════════════════════════════════════════
-
+        # ---- Header ----
         header_frame = ctk.CTkFrame(self, fg_color="transparent")
         header_frame.pack(fill="x", padx=20, pady=(20, 10))
 
@@ -71,11 +68,11 @@ class DashboardView(ctk.CTkFrame):
 
         self.sales_card = self._make_kpi_card(
             kpi_row, "TODAY'S SALES", "₱0.00", ACCENT,
-            command=lambda: self._go_to_sales("Reports"),
+            command=self._go_to_sales,
         )
         self.txn_card = self._make_kpi_card(
             kpi_row, "TRANSACTIONS", "0", FG_PRIMARY,
-            command=lambda: self._go_to_sales("Transactions"),
+            command=self._go_to_sales,
         )
         self.lowstock_card = self._make_kpi_card(
             kpi_row, "LOW STOCK", "0", "#D97706",
@@ -246,7 +243,7 @@ class DashboardView(ctk.CTkFrame):
     # NAVIGATION
     # ─────────────────────────────────────────────
 
-    def _go_to_sales(self, tab_name="Transactions"):
+    def _go_to_sales(self):
         if callable(self.on_navigate):
             self.on_navigate("sales")
 
@@ -259,7 +256,11 @@ class DashboardView(ctk.CTkFrame):
     # ─────────────────────────────────────────────
 
     def _load(self):
-        stats = DashboardController.get_stats()
+        try:
+            stats = DashboardController.get_stats()
+        except Exception as e:
+            print(f"[Dashboard] get_stats failed: {e}")
+            stats = {}
 
         self.sales_card.configure(
             text=f"₱{stats.get('total_sales_today', 0):,.2f}"
@@ -286,34 +287,44 @@ class DashboardView(ctk.CTkFrame):
         self._render_low_stock()
 
     # ─────────────────────────────────────────────
-    # EXPIRING SOON (batches, next 30 days + already expired)
+    # EXPIRING SOON
     # ─────────────────────────────────────────────
 
     def _render_expiring(self):
         for w in self.expiring_frame.winfo_children():
             w.destroy()
 
-        # ---- Fetch batches expiring in next 30 days ----
+        # ---- Fetch expiring + expired (with fallbacks) ----
+        rows = []
+        expired = []
+
         try:
-            rows = InventoryController.list_expiring_soon(days=30)
+            rows = list(InventoryController.list_expiring_soon(days=30))
         except Exception as e:
-            ctk.CTkLabel(self.expiring_frame,
-                         text=f"Error: {e}",
-                         font=font(11),
-                         text_color=DANGER).pack(pady=20)
-            self._update_pager(self.expiring_pager, 1, 1)
-            return
+            print(f"[Dashboard] list_expiring_soon failed: {e}")
 
-        # ---- Fetch already-expired batches ----
         try:
-            expired = InventoryController.list_expired_batches()
-        except Exception:
-            expired = []
+            expired = list(InventoryController.list_expired_batches())
+        except Exception as e:
+            print(f"[Dashboard] list_expired_batches failed: {e}")
 
-        # ---- Combine: expired first, then expiring soon ----
-        all_rows = list(expired) + [r for r in rows if r not in expired]
+        # ---- Combine: expired first, then soon-expiring ----
+        seen_keys = set()
+        combined = []
 
-        total = len(all_rows)
+        for r in expired:
+            key = (r.get("batch_id"), r.get("product_id"))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                combined.append(dict(r))
+
+        for r in rows:
+            key = (r.get("batch_id"), r.get("product_id"))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                combined.append(dict(r))
+
+        total = len(combined)
         self.expiring_total_pages = max(
             1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE
         )
@@ -322,7 +333,7 @@ class DashboardView(ctk.CTkFrame):
 
         start = (self.expiring_page - 1) * self.PAGE_SIZE
         end = start + self.PAGE_SIZE
-        page_rows = all_rows[start:end]
+        page_rows = combined[start:end]
 
         if not page_rows:
             ctk.CTkLabel(self.expiring_frame,
@@ -347,7 +358,6 @@ class DashboardView(ctk.CTkFrame):
                          font=font_bold(11),
                          text_color=FG_SECONDARY).pack(side="left", padx=3)
 
-        # ---- Rows ----
         today = datetime.now().date()
 
         for i, b in enumerate(page_rows):
@@ -355,7 +365,7 @@ class DashboardView(ctk.CTkFrame):
             row = ctk.CTkFrame(self.expiring_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=2)
 
-            # ---- Product name (Brand + Name + Size) ----
+            # ---- Product name ----
             display = " ".join(
                 part for part in (b.get("brand"), b.get("product_name"),
                                   b.get("size"))
@@ -376,26 +386,22 @@ class DashboardView(ctk.CTkFrame):
                          font=font_bold(11),
                          text_color=FG_PRIMARY).pack(side="left", padx=3)
 
-            # ---- Expires + days-left ----
             exp_str = b.get("expiration_date") or "—"
             days_left = None
             try:
                 exp_date = datetime.strptime(exp_str, "%Y-%m-%d").date()
                 days_left = (exp_date - today).days
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
 
             if days_left is None:
                 exp_text, exp_color = exp_str, FG_MUTED
             elif days_left < 0:
-                exp_text = f"{exp_str} (expired)"
-                exp_color = DANGER
+                exp_text, exp_color = f"{exp_str} (expired)", DANGER
             elif days_left <= 7:
-                exp_text = f"{exp_str} ({days_left}d)"
-                exp_color = DANGER
+                exp_text, exp_color = f"{exp_str} ({days_left}d)", DANGER
             elif days_left <= 30:
-                exp_text = f"{exp_str} ({days_left}d)"
-                exp_color = "#D97706"
+                exp_text, exp_color = f"{exp_str} ({days_left}d)", "#D97706"
             else:
                 exp_text, exp_color = exp_str, FG_SECONDARY
 
@@ -415,7 +421,12 @@ class DashboardView(ctk.CTkFrame):
         for w in self.lowstock_frame.winfo_children():
             w.destroy()
 
-        rows = DashboardController.low_stock_products(limit=500)
+        try:
+            rows = list(DashboardController.low_stock_products(limit=500))
+        except Exception as e:
+            print(f"[Dashboard] low_stock_products failed: {e}")
+            rows = []
+
         total = len(rows)
         self.lowstock_total_pages = max(
             1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE
@@ -450,7 +461,6 @@ class DashboardView(ctk.CTkFrame):
                          font=font_bold(11),
                          text_color=FG_SECONDARY).pack(side="left", padx=4)
 
-        # ---- Rows ----
         for i, p in enumerate(page_rows):
             bg = BG_ROW_ALT if i % 2 else BG_CARD
 

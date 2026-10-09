@@ -19,51 +19,63 @@ def _generate_product_code(cur):
 
 
 # ─────────────────────────────────────────────
-# STOCK AGGREGATION HELPERS
+# STOCK AGGREGATION (single-query — kills N+1)
 # ─────────────────────────────────────────────
 
 def _attach_stock(rows):
     """
     Given a list of product rows, add `stock_qty` and `earliest_expiration`
-    keys by aggregating from the batches table.
-    Returns the same list of dicts (sqlite3.Row isn't mutable).
+    keys by aggregating from batches in ONE query (not one per product).
+
+    This is the biggest dashboard performance win — without it, 36 products
+    means 72 aggregate queries per load.
     """
     if not rows:
         return []
 
-    result = []
     today = now_local()[:10]
+    product_ids = [r["product_id"] for r in rows]
+    placeholders = ",".join("?" * len(product_ids))
 
     conn = get_connection()
+    try:
+        agg_rows = conn.execute(f"""
+            SELECT
+                product_id,
+                COALESCE(SUM(
+                    CASE
+                        WHEN expiration_date IS NULL OR expiration_date >= ?
+                        THEN quantity
+                        ELSE 0
+                    END
+                ), 0) AS stock_qty,
+                MIN(
+                    CASE
+                        WHEN quantity > 0
+                             AND expiration_date IS NOT NULL
+                             AND expiration_date >= ?
+                        THEN expiration_date
+                        ELSE NULL
+                    END
+                ) AS earliest_expiration
+            FROM batches
+            WHERE is_archived = 0
+              AND product_id IN ({placeholders})
+            GROUP BY product_id
+        """, [today, today] + product_ids).fetchall()
+    finally:
+        conn.close()
+
+    agg = {r["product_id"]: r for r in agg_rows}
+
+    result = []
     for row in rows:
         d = dict(row)
-
-        # ---- Sum non-expired quantity ----
-        agg = conn.execute("""
-            SELECT
-                COALESCE(SUM(quantity), 0) AS stock_qty
-            FROM batches
-            WHERE product_id = ?
-              AND is_archived = 0
-              AND (expiration_date IS NULL OR expiration_date >= ?)
-        """, (d["product_id"], today)).fetchone()
-
-        # ---- Earliest non-expired expiration ----
-        earliest = conn.execute("""
-            SELECT MIN(expiration_date) AS earliest
-            FROM batches
-            WHERE product_id = ?
-              AND is_archived = 0
-              AND quantity > 0
-              AND expiration_date IS NOT NULL
-              AND expiration_date >= ?
-        """, (d["product_id"], today)).fetchone()
-
-        d["stock_qty"] = agg["stock_qty"]
-        d["earliest_expiration"] = earliest["earliest"] if earliest else None
+        a = agg.get(d["product_id"])
+        d["stock_qty"] = a["stock_qty"] if a else 0
+        d["earliest_expiration"] = a["earliest_expiration"] if a else None
         result.append(d)
 
-    conn.close()
     return result
 
 
@@ -135,6 +147,7 @@ def get_product(product_id):
 def get_low_stock_products():
     """
     Products whose total non-expired stock is <= low_stock_level.
+    Computed in Python from a single aggregate query.
     """
     all_products = get_all_products(include_archived=False)
     return [
@@ -167,18 +180,12 @@ def add_product(name, price, stock_qty, low_stock_level,
                 supplier_id, category_id, image_path=None,
                 brand=None, size=None, unit="pc", cost_price=0.0,
                 expiration_date=None):
-    """
-    Create a product AND an initial batch for its starting stock.
-
-    Stock is never stored on products — it lives in `batches`.
-    """
     conn = get_connection()
     try:
         cur = conn.cursor()
         code = _generate_product_code(cur)
         now = now_local()
 
-        # ---- Insert product ----
         cur.execute("""
             INSERT INTO products
                 (product_code, name, brand, size, unit, cost_price, price,
@@ -190,7 +197,6 @@ def add_product(name, price, stock_qty, low_stock_level,
               now, now))
         product_id = cur.lastrowid
 
-        # ---- Create the initial batch (if any stock was given) ----
         if stock_qty and stock_qty > 0:
             create_batch_cur(
                 cur,
@@ -214,10 +220,6 @@ def add_product(name, price, stock_qty, low_stock_level,
 def update_product(product_id, name, price, low_stock_level,
                    supplier_id, category_id, image_path=None,
                    brand=None, size=None, unit="pc", cost_price=0.0):
-    """
-    Update product info only. Stock lives in batches and is NOT touched here.
-    Use create_batch() to add stock, or RestockDialog.
-    """
     conn = get_connection()
     try:
         conn.execute("""
@@ -241,10 +243,6 @@ def update_product(product_id, name, price, low_stock_level,
 
 def restock_product(product_id, quantity, cost_price=None,
                     expiration_date=None, supplier_id=None):
-    """
-    Add stock by creating a NEW batch.
-    Cost defaults to the product's current cost_price if not given.
-    """
     if quantity <= 0:
         return False, "Quantity must be positive."
 
@@ -252,7 +250,6 @@ def restock_product(product_id, quantity, cost_price=None,
     try:
         cur = conn.cursor()
 
-        # ---- Default cost from product if not provided ----
         if cost_price is None:
             row = cur.execute(
                 "SELECT cost_price, supplier_id FROM products WHERE product_id = ?",
@@ -282,7 +279,6 @@ def restock_product(product_id, quantity, cost_price=None,
 
 
 def update_cost_price(product_id, cost_price):
-    """Standalone cost update (products.cost_price — used as a default)."""
     conn = get_connection()
     try:
         conn.execute("""
@@ -335,13 +331,6 @@ def unarchive_product(product_id):
 # ─────────────────────────────────────────────
 
 def get_product_counts():
-    """
-    Return:
-      - total_products (non-archived)
-      - low_stock_count
-      - out_of_stock_count
-    Uses batch aggregation.
-    """
     products = get_all_products(include_archived=False)
 
     total = len(products)

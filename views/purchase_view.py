@@ -26,19 +26,10 @@ from config import (
 
 class PurchaseView(ctk.CTkFrame):
 
-    # ---- Pagination size ----
     PAGE_SIZE = 10
-
-    # ─────────────────────────────────────────────
-    # BUTTON COLORS
-    # ─────────────────────────────────────────────
 
     ACTIVE_COLOR = ACCENT
     IDLE_COLOR   = NEUTRAL
-
-    # ─────────────────────────────────────────────
-    # SETUP
-    # ─────────────────────────────────────────────
 
     def __init__(self, parent, user):
         super().__init__(parent, fg_color=BG_MAIN)
@@ -48,11 +39,9 @@ class PurchaseView(ctk.CTkFrame):
         self.date_from = ""
         self.date_to = ""
 
-        # ---- Active quick-range button ----
         self.active_range_button = None
         self._programmatic_set = False
 
-        # ---- Pagination state ----
         self.current_page = 1
         self.total_pages = 1
 
@@ -64,10 +53,6 @@ class PurchaseView(ctk.CTkFrame):
     # ─────────────────────────────────────────────
 
     def _build(self):
-        # ═════════════════════════════════════════
-        # PAGE HEADER
-        # ═════════════════════════════════════════
-
         header_frame = ctk.CTkFrame(self, fg_color="transparent")
         header_frame.pack(fill="x", padx=20, pady=(20, 10))
 
@@ -90,17 +75,12 @@ class PurchaseView(ctk.CTkFrame):
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
                       command=self._new_po_dialog).pack(side="right")
 
-        # ═════════════════════════════════════════
-        # FILTER CARD
-        # ═════════════════════════════════════════
-
         filter_card = ctk.CTkFrame(self, fg_color=BG_CARD,
                                    corner_radius=12,
                                    border_width=1,
                                    border_color=BORDER)
         filter_card.pack(fill="x", padx=20, pady=(0, 10))
 
-        # ---- Row 1: search + status + refresh ----
         row1 = ctk.CTkFrame(filter_card, fg_color="transparent")
         row1.pack(fill="x", padx=16, pady=(14, 6))
 
@@ -156,7 +136,6 @@ class PurchaseView(ctk.CTkFrame):
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
                       command=self._load).pack(side="right")
 
-        # ---- Row 2: date range ----
         row2 = ctk.CTkFrame(filter_card, fg_color="transparent")
         row2.pack(fill="x", padx=16, pady=(0, 14))
 
@@ -243,10 +222,6 @@ class PurchaseView(ctk.CTkFrame):
                                         text_color=FG_SECONDARY)
         self.count_label.pack(side="right", padx=(0, 4))
 
-        # ═════════════════════════════════════════
-        # LIST CARD
-        # ═════════════════════════════════════════
-
         list_card = ctk.CTkFrame(self, fg_color=BG_CARD,
                                  corner_radius=12,
                                  border_width=1,
@@ -255,10 +230,6 @@ class PurchaseView(ctk.CTkFrame):
 
         self.list_frame = ctk.CTkScrollableFrame(list_card, fg_color="transparent")
         self.list_frame.pack(fill="both", expand=True, padx=8, pady=8)
-
-        # ═════════════════════════════════════════
-        # PAGINATION CONTROLS
-        # ═════════════════════════════════════════
 
         pager = ctk.CTkFrame(list_card, fg_color="transparent")
         pager.pack(fill="x", padx=12, pady=(0, 12))
@@ -334,7 +305,7 @@ class PurchaseView(ctk.CTkFrame):
             )
 
     # ─────────────────────────────────────────────
-    # FILTERS — SEARCH
+    # FILTERS
     # ─────────────────────────────────────────────
 
     def _on_search_change(self, *args):
@@ -345,18 +316,10 @@ class PurchaseView(ctk.CTkFrame):
     def _clear_search(self):
         self.search_var.set("")
 
-    # ─────────────────────────────────────────────
-    # FILTERS — STATUS
-    # ─────────────────────────────────────────────
-
     def _on_status_change(self, choice):
         self.filter_status = choice
         self.current_page = 1
         self._load()
-
-    # ─────────────────────────────────────────────
-    # QUICK-RANGE BUTTON HIGHLIGHT
-    # ─────────────────────────────────────────────
 
     def _highlight_button(self, button):
         if self.active_range_button is not None:
@@ -373,10 +336,6 @@ class PurchaseView(ctk.CTkFrame):
                 fg_color=NEUTRAL, text_color=NEUTRAL_TEXT,
             )
         self.active_range_button = None
-
-    # ─────────────────────────────────────────────
-    # FILTERS — DATE RANGE (auto-apply)
-    # ─────────────────────────────────────────────
 
     def _on_date_change(self, *args):
         if self._programmatic_set:
@@ -409,10 +368,6 @@ class PurchaseView(ctk.CTkFrame):
         except ValueError:
             return False
 
-    # ─────────────────────────────────────────────
-    # QUICK RANGES
-    # ─────────────────────────────────────────────
-
     def _range_today(self):
         today = datetime.now().strftime("%Y-%m-%d")
         self._set_dates_programmatically(today, today, self.btn_today)
@@ -431,10 +386,6 @@ class PurchaseView(ctk.CTkFrame):
 
     def _clear_dates(self):
         self._set_dates_programmatically("", "", self.btn_clear)
-
-    # ─────────────────────────────────────────────
-    # HELPER — PROGRAMMATIC DATE SET
-    # ─────────────────────────────────────────────
 
     def _set_dates_programmatically(self, d_from, d_to, button):
         self._programmatic_set = True
@@ -500,11 +451,9 @@ class PurchaseView(ctk.CTkFrame):
         for w in self.list_frame.winfo_children():
             w.destroy()
 
-        # ---- Total count ----
         total = len(purchases)
         self.count_label.configure(text=f"{total} record(s)")
 
-        # ---- Pagination math ----
         self.total_pages = max(1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
         if self.current_page > self.total_pages:
             self.current_page = self.total_pages
@@ -513,7 +462,6 @@ class PurchaseView(ctk.CTkFrame):
         end = start + self.PAGE_SIZE
         page_purchases = purchases[start:end]
 
-        # ---- Header ----
         header = ctk.CTkFrame(self.list_frame, fg_color="transparent")
         header.pack(fill="x", pady=(4, 8))
         cols = [
@@ -531,7 +479,6 @@ class PurchaseView(ctk.CTkFrame):
                          font=font_bold(11),
                          text_color=FG_SECONDARY).pack(side="left", padx=3)
 
-        # ---- Empty state ----
         if not page_purchases:
             ctk.CTkLabel(self.list_frame,
                          text="No records match your filters.",
@@ -540,11 +487,9 @@ class PurchaseView(ctk.CTkFrame):
             self._update_pager()
             return
 
-        # ---- Rows ----
         for i, p in enumerate(page_purchases):
             self._render_row(p, i)
 
-        # ---- Update pager ----
         self._update_pager()
 
     def _render_row(self, p, index=0):
@@ -594,7 +539,6 @@ class PurchaseView(ctk.CTkFrame):
                      font=font(11),
                      text_color=FG_SECONDARY).pack(side="left", padx=3)
 
-        # ---- Actions ----
         actions = ctk.CTkFrame(row, fg_color="transparent")
         actions.pack(side="right", padx=4)
 
@@ -666,14 +610,10 @@ class PurchaseView(ctk.CTkFrame):
 
 
 # ─────────────────────────────────────────────
-# NEW PURCHASE ORDER DIALOG (styled)
+# NEW PURCHASE ORDER DIALOG
 # ─────────────────────────────────────────────
 
 class PurchaseOrderDialog(ctk.CTkToplevel):
-
-    # ─────────────────────────────────────────────
-    # SETUP
-    # ─────────────────────────────────────────────
 
     def __init__(self, parent, user, on_save):
         super().__init__(parent)
@@ -681,8 +621,13 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         self.user = user
         self.on_save = on_save
         self.title("New Purchase Order")
-        self.geometry("920x620")
-        self.resizable(False, False)
+
+        # ═════════════════════════════════════════
+        # Smaller dialog so buttons stay on-screen
+        # ═════════════════════════════════════════
+        self.geometry("920x540")
+        self.minsize(820, 500)
+        self.resizable(True, True)
         self.configure(fg_color=BG_MAIN)
 
         self.suppliers = SupplierController.list_suppliers()
@@ -692,27 +637,31 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         self._build()
         prepare_dialog_screen(self, self.parent)
 
-    # ─────────────────────────────────────────────
-    # BUILD
-    # ─────────────────────────────────────────────
-
     def _build(self):
+        # ═════════════════════════════════════════
+        # HEADER
+        # ═════════════════════════════════════════
+
         ctk.CTkLabel(self, text="New Purchase Order",
                      font=font_bold(18),
-                     text_color=FG_PRIMARY).pack(pady=(18, 4))
+                     text_color=FG_PRIMARY).pack(pady=(14, 2))
 
         ctk.CTkLabel(self, text="Select a supplier, then add products to order",
                      font=font(11),
-                     text_color=FG_SECONDARY).pack(pady=(0, 12))
+                     text_color=FG_SECONDARY).pack(pady=(0, 8))
+
+        # ═════════════════════════════════════════
+        # SUPPLIER ROW
+        # ═════════════════════════════════════════
 
         sup_card = ctk.CTkFrame(self, fg_color=BG_CARD,
                                 corner_radius=10,
                                 border_width=1,
                                 border_color=BORDER)
-        sup_card.pack(fill="x", padx=20, pady=(0, 10))
+        sup_card.pack(fill="x", padx=20, pady=(0, 8))
 
         sup_row = ctk.CTkFrame(sup_card, fg_color="transparent")
-        sup_row.pack(fill="x", padx=14, pady=12)
+        sup_row.pack(fill="x", padx=14, pady=10)
 
         ctk.CTkLabel(sup_row, text="SUPPLIER",
                      font=font_bold(10),
@@ -723,7 +672,7 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         self.supplier_menu = ctk.CTkOptionMenu(
             sup_row, values=self.supplier_names,
             variable=self.supplier_var,
-            width=280, height=36,
+            width=280, height=34,
             corner_radius=8,
             font=font(12),
             fg_color=BG_INPUT,
@@ -734,7 +683,7 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         )
         self.supplier_menu.pack(side="left", padx=(0, 10))
 
-        ctk.CTkButton(sup_row, text="Refresh", width=100, height=36,
+        ctk.CTkButton(sup_row, text="Refresh", width=100, height=34,
                       corner_radius=8,
                       font=font_bold(12),
                       fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
@@ -742,8 +691,12 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                       command=self._load_products_for_supplier
                       ).pack(side="left")
 
+        # ═════════════════════════════════════════
+        # BODY — two columns
+        # ═════════════════════════════════════════
+
         body = ctk.CTkFrame(self, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=20, pady=(0, 8))
+        body.pack(fill="both", expand=True, padx=20, pady=(0, 6))
 
         # ---- LEFT: products of supplier ----
         left = ctk.CTkFrame(body, fg_color=BG_CARD,
@@ -754,24 +707,17 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(left, text="Products of Supplier",
                      font=font_bold(12),
-                     text_color=FG_PRIMARY).pack(pady=(12, 4))
+                     text_color=FG_PRIMARY).pack(pady=(10, 2))
 
         ctk.CTkLabel(left,
                      text="Click a product to add it to the order",
                      font=font(10),
-                     text_color=FG_MUTED).pack(pady=(0, 6))
+                     text_color=FG_MUTED).pack(pady=(0, 4))
 
-        # ---- Column header for products ----
         prod_header = ctk.CTkFrame(left, fg_color="transparent")
         prod_header.pack(fill="x", padx=8, pady=(0, 4))
-        prod_cols = [
-            ("Name",     140),
-            ("Size",      60),
-            ("Unit",      45),
-            ("Category",  90),
-            ("Stock",     55),
-        ]
-        for text, width in prod_cols:
+        for text, width in [("Name", 140), ("Size", 60), ("Unit", 45),
+                            ("Category", 90), ("Stock", 55)]:
             ctk.CTkLabel(prod_header, text=text, width=width,
                          anchor="w", font=font_bold(10),
                          text_color=FG_SECONDARY).pack(side="left", padx=2)
@@ -788,26 +734,30 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(right, text="Order Lines",
                      font=font_bold(12),
-                     text_color=FG_PRIMARY).pack(pady=(12, 4))
+                     text_color=FG_PRIMARY).pack(pady=(10, 2))
 
-        # ---- Column header for order lines ----
+        # ---- Column header for order lines (with Actions column) ----
         line_header = ctk.CTkFrame(right, fg_color="transparent")
         line_header.pack(fill="x", padx=8, pady=(0, 4))
-        line_cols = [
-            ("Name",     120),
-            ("Size",      50),
-            ("Unit",      40),
-            ("Qty",       40),
-            ("Cost",      65),
-            ("Subtotal",  75),
-        ]
-        for text, width in line_cols:
+
+        # Right-side spacer matching the Remove button width (36px)
+        spacer = ctk.CTkFrame(line_header, fg_color="transparent",
+                              width=36, height=1)
+        spacer.pack(side="right", padx=(0, 6))
+        spacer.pack_propagate(False)
+
+        for text, width in [("Name", 120), ("Size", 50), ("Unit", 40),
+                            ("Qty", 40), ("Cost", 65), ("Subtotal", 75)]:
             ctk.CTkLabel(line_header, text=text, width=width,
                          anchor="w", font=font_bold(10),
                          text_color=FG_SECONDARY).pack(side="left", padx=2)
 
         self.lines_frame = ctk.CTkScrollableFrame(right, fg_color="transparent")
         self.lines_frame.pack(fill="both", expand=True, padx=8, pady=(0, 10))
+
+        # ═════════════════════════════════════════
+        # TOTAL
+        # ═════════════════════════════════════════
 
         total_row = ctk.CTkFrame(self, fg_color="transparent")
         total_row.pack(fill="x", padx=20, pady=(0, 4))
@@ -821,14 +771,18 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                                         text_color=ACCENT)
         self.total_label.pack(side="right")
 
+        # ═════════════════════════════════════════
+        # NOTES
+        # ═════════════════════════════════════════
+
         notes_row = ctk.CTkFrame(self, fg_color="transparent")
-        notes_row.pack(fill="x", padx=20, pady=(4, 8))
+        notes_row.pack(fill="x", padx=20, pady=(0, 8))
 
         ctk.CTkLabel(notes_row, text="NOTES",
                      font=font_bold(10),
                      text_color=FG_SECONDARY).pack(anchor="w", pady=(0, 4))
 
-        self.notes_e = ctk.CTkEntry(notes_row, height=36,
+        self.notes_e = ctk.CTkEntry(notes_row, height=34,
                                     corner_radius=8,
                                     font=font(12),
                                     fg_color=BG_INPUT,
@@ -837,36 +791,37 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                                     placeholder_text="Optional notes for this order")
         self.notes_e.pack(fill="x")
 
-        btn_row = ctk.CTkFrame(self, fg_color="transparent")
-        btn_row.pack(pady=(6, 18))
+        # ═════════════════════════════════════════
+        # BUTTONS — packed ABOVE the bottom of the dialog
+        # ═════════════════════════════════════════
 
-        ctk.CTkButton(btn_row, text="Create Order",
-                      width=160, height=40,
-                      corner_radius=8,
-                      font=font_bold(13),
-                      fg_color=BRAND_GREEN, hover_color="#1E9040",
-                      command=self._save).pack(side="left", padx=6)
+        btn_row = ctk.CTkFrame(self, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(4, 14))
 
         ctk.CTkButton(btn_row, text="Clear",
-                      width=100, height=40,
+                      width=100, height=38,
                       corner_radius=8,
                       font=font_bold(12),
                       fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
                       text_color=NEUTRAL_TEXT,
-                      command=self._clear).pack(side="left", padx=6)
+                      command=self._clear).pack(side="left")
+
+        ctk.CTkButton(btn_row, text="Place Order",
+                      height=38,
+                      corner_radius=8,
+                      font=font_bold(13),
+                      fg_color=BRAND_GREEN, hover_color="#1E9040",
+                      command=self._save).pack(side="right", fill="x",
+                                               expand=True, padx=(8, 0))
 
         self._load_products_for_supplier()
 
     # ─────────────────────────────────────────────
-    # SUPPLIER CHANGE
+    # SUPPLIER
     # ─────────────────────────────────────────────
 
     def _on_supplier_change(self, choice):
         self._load_products_for_supplier()
-
-    # ─────────────────────────────────────────────
-    # RESOLVE SELECTED SUPPLIER ID
-    # ─────────────────────────────────────────────
 
     def _get_selected_supplier_id(self):
         supplier_name = self.supplier_var.get()
@@ -874,10 +829,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
             if s["name"] == supplier_name:
                 return s["supplier_id"]
         return None
-
-    # ─────────────────────────────────────────────
-    # LOAD PRODUCTS FOR SELECTED SUPPLIER
-    # ─────────────────────────────────────────────
 
     def _load_products_for_supplier(self):
         for w in self.products_frame.winfo_children():
@@ -905,9 +856,9 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
             self._render_product_row(p)
 
     def _render_product_row(self, p):
-        # ---- Determine stock color ----
         stock_qty = p.get("stock_qty", 0) if hasattr(p, "get") else p["stock_qty"]
-        low_level = (p.get("low_stock_level", 0) or 0) if hasattr(p, "get") else (p["low_stock_level"] or 0)
+        low_level = ((p.get("low_stock_level", 0) or 0)
+                     if hasattr(p, "get") else (p["low_stock_level"] or 0))
 
         if stock_qty <= 0:
             stock_color = DANGER
@@ -916,7 +867,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         else:
             stock_color = SUCCESS
 
-        # ---- Row container (clickable) ----
         row = ctk.CTkFrame(self.products_frame,
                            fg_color=BG_INPUT,
                            corner_radius=6,
@@ -926,7 +876,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         row.pack(fill="x", pady=3)
         row.pack_propagate(False)
 
-        # ---- Data cells ----
         name_label = ctk.CTkLabel(row, text=p["name"] or "-",
                                   width=140, anchor="w",
                                   font=font_bold(11),
@@ -957,7 +906,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                                    text_color=stock_color)
         stock_label.pack(side="left", padx=2)
 
-        # ---- Click binding on all cells ----
         widgets = [row, name_label, size_label, unit_label, cat_label, stock_label]
         for w in widgets:
             w.bind("<Button-1>", lambda e, prod=p: self._add_line(prod))
@@ -969,7 +917,7 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                 pass
 
     # ─────────────────────────────────────────────
-    # ADD A LINE
+    # ADD LINE
     # ─────────────────────────────────────────────
 
     def _add_line(self, product):
@@ -993,7 +941,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                      font=font(11),
                      text_color=FG_SECONDARY).pack(pady=(0, 4))
 
-        # ---- Product details chip ----
         info_parts = []
         if product.get("size"):
             info_parts.append(f"Size: {product['size']}")
@@ -1091,6 +1038,16 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
             row = ctk.CTkFrame(self.lines_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=2)
 
+            # ---- Remove button FIRST (packed right so it gets space) ----
+            ctk.CTkButton(row, text="✕", width=32, height=28,
+                          corner_radius=6,
+                          font=font_bold(11),
+                          fg_color=DANGER, hover_color=DANGER_HOVER,
+                          command=lambda pid=line["product_id"]:
+                              self._remove_line(pid)
+                          ).pack(side="right", padx=(4, 6), pady=4)
+
+            # ---- Data cells ----
             ctk.CTkLabel(row, text=line["name"], width=120,
                          anchor="w",
                          font=font_bold(11),
@@ -1126,14 +1083,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                          anchor="w",
                          font=font_bold(11),
                          text_color=ACCENT).pack(side="left", padx=2)
-
-            ctk.CTkButton(row, text="✕", width=26, height=26,
-                          corner_radius=6,
-                          font=font(11),
-                          fg_color=DANGER, hover_color=DANGER_HOVER,
-                          command=lambda pid=line["product_id"]:
-                              self._remove_line(pid)
-                          ).pack(side="right", padx=6, pady=4)
 
         total = sum(l["quantity"] * l["cost"] for l in self.cart)
         self.total_label.configure(text=f"₱{total:.2f}")
@@ -1179,14 +1128,10 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
 
 
 # ─────────────────────────────────────────────
-# PURCHASE DETAIL DIALOG (styled)
+# PURCHASE DETAIL DIALOG
 # ─────────────────────────────────────────────
 
 class PurchaseDetailDialog(ctk.CTkToplevel):
-
-    # ─────────────────────────────────────────────
-    # SETUP
-    # ─────────────────────────────────────────────
 
     def __init__(self, parent, purchase):
         super().__init__(parent)
@@ -1198,10 +1143,6 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
         self.configure(fg_color=BG_MAIN)
         self._build()
         prepare_dialog_screen(self, self.parent)
-
-    # ─────────────────────────────────────────────
-    # BUILD
-    # ─────────────────────────────────────────────
 
     def _build(self):
         p = self.purchase

@@ -97,20 +97,23 @@ class InventoryController:
         return ok, msg
 
     # ─────────────────────────────────────────────
-    # BATCHES
+    # BATCHES  (all return dicts, not sqlite3.Row)
     # ─────────────────────────────────────────────
 
     @staticmethod
     def list_batches(product_id, include_archived=False):
-        return get_batches(product_id, include_archived)
+        rows = get_batches(product_id, include_archived)
+        return [dict(r) for r in rows]
 
     @staticmethod
     def list_expired_batches(product_id=None):
-        return get_expired_batches(product_id)
+        rows = get_expired_batches(product_id)
+        return [dict(r) for r in rows]
 
     @staticmethod
     def list_expiring_soon(days=30, product_id=None):
-        return get_expiring_soon_batches(days=days, product_id=product_id)
+        rows = get_expiring_soon_batches(days=days, product_id=product_id)
+        return [dict(r) for r in rows]
 
     @staticmethod
     def discard_batch(user, batch_id, quantity=None):
@@ -123,13 +126,12 @@ class InventoryController:
     @staticmethod
     def update_batch(user, batch_id, quantity=None, cost_price=None,
                      expiration_date="__KEEP__"):
-        from models.batch_model import update_batch
-        ok, msg = update_batch(batch_id, quantity, cost_price, expiration_date)
+        ok, msg = _update_batch(batch_id, quantity, cost_price, expiration_date)
         if ok:
             log_action(user["user_id"], "UPDATE_BATCH",
                        f"batch_id={batch_id}")
         return ok, msg
-    
+
     @staticmethod
     def archive_batch(user, batch_id):
         ok, msg = archive_batch(batch_id)

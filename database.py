@@ -25,6 +25,8 @@ def get_connection():
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 10000")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA temp_store = MEMORY")
     return conn
 
 
@@ -207,6 +209,9 @@ def initialize_database():
         )
     """)
 
+    # ---- 12. Indexes (performance) ----
+    _create_indexes(cur)
+
     conn.commit()
     conn.close()
 
@@ -216,11 +221,55 @@ def initialize_database():
 
 
 # ─────────────────────────────────────────────
+# INDEXES
+# ─────────────────────────────────────────────
+
+def _create_indexes(cur):
+    """Create indexes that speed up dashboard + reports + POS queries."""
+    index_sql = [
+        # ---- batches ----
+        "CREATE INDEX IF NOT EXISTS idx_batches_product ON batches(product_id)",
+        "CREATE INDEX IF NOT EXISTS idx_batches_expiration ON batches(expiration_date)",
+        "CREATE INDEX IF NOT EXISTS idx_batches_archived ON batches(is_archived)",
+        "CREATE INDEX IF NOT EXISTS idx_batches_product_active ON batches(product_id, is_archived, expiration_date)",
+
+        # ---- products ----
+        "CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id)",
+        "CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id)",
+        "CREATE INDEX IF NOT EXISTS idx_products_archived ON products(is_archived)",
+
+        # ---- transactions ----
+        "CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id)",
+
+        # ---- transaction_items ----
+        "CREATE INDEX IF NOT EXISTS idx_txn_items_transaction ON transaction_items(transaction_id)",
+        "CREATE INDEX IF NOT EXISTS idx_txn_items_product ON transaction_items(product_id)",
+
+        # ---- suppliers / categories ----
+        "CREATE INDEX IF NOT EXISTS idx_suppliers_category ON suppliers(supplier_category_id)",
+        "CREATE INDEX IF NOT EXISTS idx_suppliers_archived ON suppliers(is_archived)",
+
+        # ---- purchases ----
+        "CREATE INDEX IF NOT EXISTS idx_purchases_supplier ON purchases(supplier_id)",
+        "CREATE INDEX IF NOT EXISTS idx_purchases_status ON purchases(status)",
+        "CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON purchase_items(purchase_id)",
+
+        # ---- activity_logs ----
+        "CREATE INDEX IF NOT EXISTS idx_logs_created ON activity_logs(created_at)",
+    ]
+    for sql in index_sql:
+        try:
+            cur.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+
+
+# ─────────────────────────────────────────────
 # MIGRATIONS (safe ALTER TABLE — for existing DBs)
 # ─────────────────────────────────────────────
 
 def _run_migrations():
-    """Add new columns to existing tables without losing data."""
     conn = get_connection()
     cur = conn.cursor()
 
@@ -256,6 +305,10 @@ def _run_migrations():
             conn.commit()
     except Exception:
         pass
+
+    # ---- Ensure indexes exist on pre-existing DBs ----
+    _create_indexes(cur)
+    conn.commit()
 
     conn.close()
 
