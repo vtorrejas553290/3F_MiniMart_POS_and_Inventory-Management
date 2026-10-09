@@ -59,11 +59,30 @@ def create_purchase(supplier_id, user_id, items, notes=""):
         conn.close()
 
 
-def receive_purchase(purchase_id, user_id):
+def receive_purchase(purchase_id, user_id, product_ids=None):
+    """
+    Mark a purchase order as Received and add its items to inventory.
+
+    Parameters
+    ----------
+    purchase_id : int
+        The purchase order ID.
+    user_id : int
+        The user performing the action.
+    product_ids : list[int] | None
+        If provided, only items whose product_id is in this list will be
+        received (batches created, stock updated).
+        If None, all items are received (original behavior).
+
+    Returns
+    -------
+    (ok, message) : tuple[bool, str]
+    """
     conn = get_connection()
     try:
         cur = conn.cursor()
 
+        # ---- 1. Load the PO ----
         row = cur.execute(
             "SELECT status, supplier_id FROM purchases WHERE purchase_id = ?",
             (purchase_id,)
@@ -76,13 +95,30 @@ def receive_purchase(purchase_id, user_id):
 
         supplier_id = row["supplier_id"]
 
-        items = cur.execute("""
+        # ---- 2. Load all items on the PO ----
+        all_items = cur.execute("""
             SELECT product_id, quantity, cost, expiration_date
             FROM purchase_items
             WHERE purchase_id = ?
         """, (purchase_id,)).fetchall()
 
-        for item in items:
+        if not all_items:
+            return False, "Purchase has no items."
+
+        # ---- 3. Filter items by product_ids (if provided) ----
+        if product_ids is None:
+            items_to_receive = list(all_items)
+        else:
+            wanted = set(product_ids)
+            items_to_receive = [
+                it for it in all_items if it["product_id"] in wanted
+            ]
+
+        if not items_to_receive:
+            return False, "No items selected to receive."
+
+        # ---- 4. Create batches + update cost for each selected item ----
+        for item in items_to_receive:
             create_batch_cur(
                 cur,
                 product_id=item["product_id"],
@@ -98,14 +134,31 @@ def receive_purchase(purchase_id, user_id):
                 WHERE product_id = ?
             """, (item["cost"], now_local(), item["product_id"]))
 
-        cur.execute("""
-            UPDATE purchases
-            SET status = 'Received', received_at = ?
-            WHERE purchase_id = ?
-        """, (now_local(), purchase_id))
+        # ---- 5. Decide whether to mark the whole PO as Received ----
+        #
+        # If EVERY item on the PO is in the received set, mark it Received.
+        # Otherwise, leave it as Ordered so remaining items can be received
+        # in a later partial receipt.
+        #
+        all_ids       = {it["product_id"] for it in all_items}
+        received_ids  = {it["product_id"] for it in items_to_receive}
+
+        if all_ids.issubset(received_ids):
+            cur.execute("""
+                UPDATE purchases
+                SET status = 'Received', received_at = ?
+                WHERE purchase_id = ?
+            """, (now_local(), purchase_id))
+            msg = "Purchase fully received. Batches created."
+        else:
+            msg = (
+                f"Partially received {len(items_to_receive)} of "
+                f"{len(all_items)} item(s). Remaining items can still "
+                f"be received later."
+            )
 
         conn.commit()
-        return True, "Purchase received. Batches created."
+        return True, msg
 
     except Exception as e:
         conn.rollback()

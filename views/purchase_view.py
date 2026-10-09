@@ -10,6 +10,7 @@ from controllers.purchase_controller import PurchaseController
 from controllers.supplier_controller import SupplierController
 from controllers.inventory_controller import InventoryController
 from utils import prepare_dialog_screen
+from utils_pkg.purchase_pdf_export import export_purchase_pdf
 from config import (
     font, font_bold,
     BG_MAIN, BG_CARD, BG_INPUT, BG_ROW_ALT, BORDER,
@@ -569,15 +570,31 @@ class PurchaseView(ctk.CTkFrame):
     # ─────────────────────────────────────────────
 
     def _receive(self, purchase):
-        confirm = messagebox.askyesno(
-            "Receive Purchase Order",
-            f"Mark PO #{purchase['purchase_id']} as Received?\n\n"
-            "The ordered quantities will be added to inventory."
+        """
+        Open a confirmation dialog showing each line item with a checkbox.
+        Only checked items are sent to the inventory.
+        """
+        items = PurchaseController.get_items(purchase["purchase_id"])
+        dialog = ReceiveConfirmDialog(
+            self.winfo_toplevel(),
+            purchase,
+            items,
         )
-        if not confirm:
+        if not dialog.confirmed:
             return
 
-        ok, msg = PurchaseController.receive(self.user, purchase["purchase_id"])
+        selected_ids = dialog.selected_product_ids
+        if not selected_ids:
+            return
+
+        # ---- Call the controller with the selected product IDs ----
+        # NOTE: adjust the argument name if your controller uses a different
+        # signature (e.g. `product_ids=` or `items=`).
+        ok, msg = PurchaseController.receive(
+            self.user,
+            purchase["purchase_id"],
+            product_ids=selected_ids,
+        )
         if ok:
             messagebox.showinfo("Received", msg)
             self._load()
@@ -622,9 +639,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         self.on_save = on_save
         self.title("New Purchase Order")
 
-        # ═════════════════════════════════════════
-        # Smaller dialog so buttons stay on-screen
-        # ═════════════════════════════════════════
         self.geometry("920x540")
         self.minsize(820, 500)
         self.resizable(True, True)
@@ -638,10 +652,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         prepare_dialog_screen(self, self.parent)
 
     def _build(self):
-        # ═════════════════════════════════════════
-        # HEADER
-        # ═════════════════════════════════════════
-
         ctk.CTkLabel(self, text="New Purchase Order",
                      font=font_bold(18),
                      text_color=FG_PRIMARY).pack(pady=(14, 2))
@@ -649,10 +659,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self, text="Select a supplier, then add products to order",
                      font=font(11),
                      text_color=FG_SECONDARY).pack(pady=(0, 8))
-
-        # ═════════════════════════════════════════
-        # SUPPLIER ROW
-        # ═════════════════════════════════════════
 
         sup_card = ctk.CTkFrame(self, fg_color=BG_CARD,
                                 corner_radius=10,
@@ -691,14 +697,9 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                       command=self._load_products_for_supplier
                       ).pack(side="left")
 
-        # ═════════════════════════════════════════
-        # BODY — two columns
-        # ═════════════════════════════════════════
-
         body = ctk.CTkFrame(self, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=20, pady=(0, 6))
 
-        # ---- LEFT: products of supplier ----
         left = ctk.CTkFrame(body, fg_color=BG_CARD,
                             corner_radius=10,
                             border_width=1,
@@ -725,7 +726,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         self.products_frame = ctk.CTkScrollableFrame(left, fg_color="transparent")
         self.products_frame.pack(fill="both", expand=True, padx=8, pady=(0, 10))
 
-        # ---- RIGHT: order lines ----
         right = ctk.CTkFrame(body, fg_color=BG_CARD,
                              corner_radius=10,
                              border_width=1,
@@ -736,11 +736,9 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                      font=font_bold(12),
                      text_color=FG_PRIMARY).pack(pady=(10, 2))
 
-        # ---- Column header for order lines (with Actions column) ----
         line_header = ctk.CTkFrame(right, fg_color="transparent")
         line_header.pack(fill="x", padx=8, pady=(0, 4))
 
-        # Right-side spacer matching the Remove button width (36px)
         spacer = ctk.CTkFrame(line_header, fg_color="transparent",
                               width=36, height=1)
         spacer.pack(side="right", padx=(0, 6))
@@ -755,10 +753,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         self.lines_frame = ctk.CTkScrollableFrame(right, fg_color="transparent")
         self.lines_frame.pack(fill="both", expand=True, padx=8, pady=(0, 10))
 
-        # ═════════════════════════════════════════
-        # TOTAL
-        # ═════════════════════════════════════════
-
         total_row = ctk.CTkFrame(self, fg_color="transparent")
         total_row.pack(fill="x", padx=20, pady=(0, 4))
 
@@ -770,10 +764,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                                         font=font_bold(18),
                                         text_color=ACCENT)
         self.total_label.pack(side="right")
-
-        # ═════════════════════════════════════════
-        # NOTES
-        # ═════════════════════════════════════════
 
         notes_row = ctk.CTkFrame(self, fg_color="transparent")
         notes_row.pack(fill="x", padx=20, pady=(0, 8))
@@ -790,10 +780,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                                     border_width=1,
                                     placeholder_text="Optional notes for this order")
         self.notes_e.pack(fill="x")
-
-        # ═════════════════════════════════════════
-        # BUTTONS — packed ABOVE the bottom of the dialog
-        # ═════════════════════════════════════════
 
         btn_row = ctk.CTkFrame(self, fg_color="transparent")
         btn_row.pack(fill="x", padx=20, pady=(4, 14))
@@ -815,10 +801,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                                                expand=True, padx=(8, 0))
 
         self._load_products_for_supplier()
-
-    # ─────────────────────────────────────────────
-    # SUPPLIER
-    # ─────────────────────────────────────────────
 
     def _on_supplier_change(self, choice):
         self._load_products_for_supplier()
@@ -916,10 +898,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
             except Exception:
                 pass
 
-    # ─────────────────────────────────────────────
-    # ADD LINE
-    # ─────────────────────────────────────────────
-
     def _add_line(self, product):
         for line in self.cart:
             if line["product_id"] == product["product_id"]:
@@ -1016,10 +994,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                       command=save).pack(pady=(20, 20))
         prepare_dialog_screen(prompt, self)
 
-    # ─────────────────────────────────────────────
-    # RENDER LINES
-    # ─────────────────────────────────────────────
-
     def _render_lines(self):
         for w in self.lines_frame.winfo_children():
             w.destroy()
@@ -1038,7 +1012,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
             row = ctk.CTkFrame(self.lines_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=2)
 
-            # ---- Remove button FIRST (packed right so it gets space) ----
             ctk.CTkButton(row, text="✕", width=32, height=28,
                           corner_radius=6,
                           font=font_bold(11),
@@ -1047,7 +1020,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
                               self._remove_line(pid)
                           ).pack(side="right", padx=(4, 6), pady=4)
 
-            # ---- Data cells ----
             ctk.CTkLabel(row, text=line["name"], width=120,
                          anchor="w",
                          font=font_bold(11),
@@ -1095,10 +1067,6 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
         self.cart.clear()
         self._render_lines()
 
-    # ─────────────────────────────────────────────
-    # SAVE
-    # ─────────────────────────────────────────────
-
     def _save(self):
         if not self.cart:
             messagebox.showerror("Error", "Add at least one product to the order.")
@@ -1128,6 +1096,289 @@ class PurchaseOrderDialog(ctk.CTkToplevel):
 
 
 # ─────────────────────────────────────────────
+# RECEIVE CONFIRMATION DIALOG (with checkboxes)
+# ─────────────────────────────────────────────
+
+class ReceiveConfirmDialog(ctk.CTkToplevel):
+    """
+    Shows every line item on a purchase order with a checkbox.
+    Only checked items will be received into inventory.
+    """
+
+    def __init__(self, parent, purchase, items):
+        super().__init__(parent)
+        self.parent = parent
+        self.purchase = purchase
+        self.items = items
+        self.confirmed = False
+
+        # Tracks which product_ids are checked
+        self._check_vars = {}          # product_id -> BooleanVar
+        self.selected_product_ids = [] # populated on confirm
+
+        self.title(f"Receive PO #{purchase['purchase_id']}")
+        self.geometry("760x660")
+        self.minsize(700, 600)
+        self.resizable(True, True)
+        self.configure(fg_color=BG_MAIN)
+
+        self._build()
+        prepare_dialog_screen(self, self.parent)
+
+        self.transient(parent)
+        self.grab_set()
+        self.focus_force()
+        self.wait_window(self)
+
+    # ─────────────────────────────────────────────
+    # BUILD
+    # ─────────────────────────────────────────────
+
+    def _build(self):
+        p = self.purchase
+
+        ctk.CTkLabel(self,
+                     text=f"Receive PO #{p['purchase_id']}",
+                     font=font_bold(18),
+                     text_color=FG_PRIMARY).pack(pady=(18, 4))
+
+        ctk.CTkLabel(self,
+                     text=p["supplier_name"] or "Unknown Supplier",
+                     font=font(12),
+                     text_color=FG_SECONDARY).pack(pady=(0, 4))
+
+        ctk.CTkLabel(self,
+                     text="Check each item that actually arrived. "
+                          "Unchecked items will NOT be added to inventory.",
+                     font=font(11),
+                     text_color=FG_MUTED).pack(pady=(0, 14))
+
+        # ─────────────────────────────────────────
+        # BUTTONS FIRST (packed to bottom)
+        # ─────────────────────────────────────────
+        btn_row = ctk.CTkFrame(self, fg_color="transparent")
+        btn_row.pack(side="bottom", fill="x", padx=20, pady=(8, 16))
+
+        ctk.CTkButton(btn_row, text="Cancel",
+                      width=140, height=40,
+                      corner_radius=8,
+                      font=font_bold(12),
+                      fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+                      text_color=NEUTRAL_TEXT,
+                      command=self._cancel).pack(side="left")
+
+        # ---- "Select All / Deselect All" toggle ----
+        self._all_checked = True   # all items are checked by default
+        self.toggle_all_btn = ctk.CTkButton(
+            btn_row,
+            text="Deselect All",
+            width=130, height=40,
+            corner_radius=8,
+            font=font_bold(11),
+            fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+            text_color=NEUTRAL_TEXT,
+            command=self._toggle_all,
+        )
+        self.toggle_all_btn.pack(side="left", padx=(8, 0))
+
+        ctk.CTkButton(btn_row, text="Confirm Receive",
+                      height=40,
+                      corner_radius=8,
+                      font=font_bold(13),
+                      fg_color=BRAND_GREEN, hover_color="#1E9040",
+                      command=self._confirm).pack(side="right", fill="x",
+                                                  expand=True, padx=(8, 0))
+
+        # ─────────────────────────────────────────
+        # INFO CARD
+        # ─────────────────────────────────────────
+        info = ctk.CTkFrame(self, fg_color=BG_CARD,
+                            corner_radius=12,
+                            border_width=1,
+                            border_color=BORDER)
+        info.pack(fill="x", padx=20, pady=(0, 10))
+
+        info_rows = [
+            ("Ordered By",    p["full_name"] or p["username"] or "-"),
+            ("Date Ordered",  p["created_at"] or "-"),
+            ("Total",         f"₱{p['total_cost']:.2f}"),
+        ]
+        for i, (label, value) in enumerate(info_rows):
+            if i > 0:
+                ctk.CTkFrame(info, height=1, fg_color=BORDER).pack(
+                    fill="x", padx=14)
+
+            row = ctk.CTkFrame(info, fg_color="transparent")
+            row.pack(fill="x", padx=14, pady=7)
+
+            ctk.CTkLabel(row, text=label,
+                         width=120, anchor="w",
+                         font=font_bold(11),
+                         text_color=FG_SECONDARY).pack(side="left")
+
+            ctk.CTkLabel(row, text=str(value), anchor="w",
+                         font=font(12),
+                         text_color=FG_PRIMARY).pack(side="left")
+
+        # ─────────────────────────────────────────
+        # ITEMS CARD
+        # ─────────────────────────────────────────
+        items_card = ctk.CTkFrame(self, fg_color=BG_CARD,
+                                  corner_radius=12,
+                                  border_width=1,
+                                  border_color=BORDER)
+        items_card.pack(fill="both", expand=True, padx=20, pady=(0, 12))
+
+        # ---- Summary header with live count ----
+        self.summary_label = ctk.CTkLabel(
+            items_card,
+            text="",
+            font=font_bold(13),
+            text_color=FG_PRIMARY,
+        )
+        self.summary_label.pack(pady=(12, 4))
+
+        lines = ctk.CTkScrollableFrame(items_card, fg_color="transparent")
+        lines.pack(fill="both", expand=True, padx=8, pady=(0, 10))
+
+        # ---- Column header ----
+        header = ctk.CTkFrame(lines, fg_color="transparent")
+        header.pack(fill="x", pady=(4, 8))
+        for text, width in [("✓", 40), ("Code", 90), ("Name", 180),
+                            ("Qty", 60), ("Cost", 90), ("Subtotal", 100)]:
+            ctk.CTkLabel(header, text=text, width=width,
+                         anchor="w",
+                         font=font_bold(11),
+                         text_color=FG_SECONDARY).pack(side="left", padx=3)
+
+        if not self.items:
+            ctk.CTkLabel(lines,
+                         text="No items on this purchase order.",
+                         font=font(11),
+                         text_color=FG_MUTED).pack(pady=20)
+        else:
+            for i, it in enumerate(self.items, start=1):
+                self._render_item_row(lines, it, i)
+
+        # ---- Initialize count display ----
+        self._refresh_summary()
+
+    def _render_item_row(self, parent, item, index):
+        bg = BG_ROW_ALT if index % 2 == 0 else BG_CARD
+        row = ctk.CTkFrame(parent, fg_color=bg, corner_radius=6)
+        row.pack(fill="x", pady=2)
+
+        # ---- Checkbox (checked by default) ----
+        var = ctk.BooleanVar(value=True)
+        self._check_vars[item["product_id"]] = var
+
+        chk = ctk.CTkCheckBox(
+            row,
+            text="",
+            variable=var,
+            width=28,
+            checkbox_width=22,
+            checkbox_height=22,
+            corner_radius=4,
+            fg_color=BRAND_GREEN,
+            hover_color="#1E9040",
+            border_color=BORDER,
+            command=self._refresh_summary,
+        )
+        chk.pack(side="left", padx=(8, 4), pady=6)
+
+        ctk.CTkLabel(row, text=item["product_code"] or "-",
+                     width=90, anchor="w",
+                     font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=3)
+
+        ctk.CTkLabel(row, text=item["product_name"],
+                     width=180, anchor="w",
+                     font=font_bold(11),
+                     text_color=FG_PRIMARY).pack(side="left", padx=3)
+
+        ctk.CTkLabel(row, text=str(item["quantity"]),
+                     width=60, anchor="w",
+                     font=font_bold(11),
+                     text_color=FG_PRIMARY).pack(side="left", padx=3)
+
+        ctk.CTkLabel(row, text=f"₱{item['cost']:.2f}",
+                     width=90, anchor="w",
+                     font=font(11),
+                     text_color=FG_SECONDARY).pack(side="left", padx=3)
+
+        ctk.CTkLabel(row, text=f"₱{item['quantity'] * item['cost']:.2f}",
+                     width=100, anchor="w",
+                     font=font_bold(11),
+                     text_color=ACCENT).pack(side="left", padx=3)
+
+    # ─────────────────────────────────────────────
+    # HELPERS
+    # ─────────────────────────────────────────────
+
+    def _refresh_summary(self):
+        """Update the item count text and toggle button label."""
+        checked = sum(1 for v in self._check_vars.values() if v.get())
+        total   = len(self._check_vars)
+
+        self.summary_label.configure(
+            text=f"Items to Receive: {checked} of {total} selected"
+        )
+
+        # Toggle button label based on current state
+        if checked == total and total > 0:
+            self.toggle_all_btn.configure(text="Deselect All")
+            self._all_checked = True
+        elif checked == 0:
+            self.toggle_all_btn.configure(text="Select All")
+            self._all_checked = False
+        else:
+            self.toggle_all_btn.configure(text="Select All")
+            self._all_checked = False
+
+    def _toggle_all(self):
+        """Check or uncheck all item checkboxes."""
+        # If everything is currently checked, deselect all.
+        # Otherwise, select all.
+        checked = sum(1 for v in self._check_vars.values() if v.get())
+        total   = len(self._check_vars)
+        should_check = not (checked == total and total > 0)
+
+        for v in self._check_vars.values():
+            v.set(should_check)
+
+        self._refresh_summary()
+
+    # ─────────────────────────────────────────────
+    # CONFIRM / CANCEL
+    # ─────────────────────────────────────────────
+
+    def _confirm(self):
+        selected = [
+            pid for pid, var in self._check_vars.items()
+            if var.get()
+        ]
+
+        if not selected:
+            messagebox.showwarning(
+                "Nothing Selected",
+                "Please check at least one item to receive, "
+                "or click Cancel to abort.",
+                parent=self,
+            )
+            return
+
+        self.selected_product_ids = selected
+        self.confirmed = True
+        self.destroy()
+
+    def _cancel(self):
+        self.confirmed = False
+        self.selected_product_ids = []
+        self.destroy()
+
+
+# ─────────────────────────────────────────────
 # PURCHASE DETAIL DIALOG
 # ─────────────────────────────────────────────
 
@@ -1138,8 +1389,9 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
         self.parent = parent
         self.purchase = purchase
         self.title(f"PO #{purchase['purchase_id']}")
-        self.geometry("720x560")
-        self.resizable(False, False)
+        self.geometry("740x660")
+        self.minsize(680, 580)          # <-- never shrink below this
+        self.resizable(True, True)      # <-- allow user to resize
         self.configure(fg_color=BG_MAIN)
         self._build()
         prepare_dialog_screen(self, self.parent)
@@ -1156,6 +1408,30 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
                      font=font(12),
                      text_color=FG_SECONDARY).pack(pady=(0, 14))
 
+        # ─────────────────────────────────────
+        # BUTTONS FIRST (packed to bottom so they always stay visible)
+        # ─────────────────────────────────────
+        btn_row = ctk.CTkFrame(self, fg_color="transparent")
+        btn_row.pack(side="bottom", fill="x", padx=20, pady=(8, 16))
+
+        ctk.CTkButton(btn_row, text="Export PDF",
+                      width=140, height=38,
+                      corner_radius=8,
+                      font=font_bold(12),
+                      fg_color=BRAND_GREEN, hover_color="#1E9040",
+                      command=self._export_pdf).pack(side="left")
+
+        ctk.CTkButton(btn_row, text="Close",
+                      width=120, height=38,
+                      corner_radius=8,
+                      font=font_bold(12),
+                      fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+                      text_color=NEUTRAL_TEXT,
+                      command=self.destroy).pack(side="right")
+
+        # ─────────────────────────────────────
+        # INFO CARD
+        # ─────────────────────────────────────
         info = ctk.CTkFrame(self, fg_color=BG_CARD,
                             corner_radius=12,
                             border_width=1,
@@ -1187,11 +1463,14 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
                          font=font(12),
                          text_color=FG_PRIMARY).pack(side="left")
 
+        # ─────────────────────────────────────
+        # ITEMS CARD (fills the remaining space)
+        # ─────────────────────────────────────
         items_card = ctk.CTkFrame(self, fg_color=BG_CARD,
                                   corner_radius=12,
                                   border_width=1,
                                   border_color=BORDER)
-        items_card.pack(fill="both", expand=True, padx=20, pady=(0, 16))
+        items_card.pack(fill="both", expand=True, padx=20, pady=(0, 12))
 
         ctk.CTkLabel(items_card, text="Items",
                      font=font_bold(13),
@@ -1241,10 +1520,26 @@ class PurchaseDetailDialog(ctk.CTkToplevel):
                          font=font_bold(11),
                          text_color=ACCENT).pack(side="left", padx=3)
 
-        ctk.CTkButton(self, text="Close",
-                      width=120, height=38,
-                      corner_radius=8,
-                      font=font_bold(12),
-                      fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
-                      text_color=NEUTRAL_TEXT,
-                      command=self.destroy).pack(pady=(0, 16))
+
+    def _export_pdf(self):
+        p = self.purchase
+        items = PurchaseController.get_items(p["purchase_id"])
+
+        # Convert sqlite3.Row → dict so the exporter can use .get()
+        purchase_dict = dict(p) if not isinstance(p, dict) else p
+        items_list = [
+            dict(it) if not isinstance(it, dict) else it
+            for it in items
+        ]
+
+        ok, result = export_purchase_pdf(
+            purchase=purchase_dict,
+            items=items_list,
+            parent_window=self.winfo_toplevel(),
+        )
+
+        if ok:
+            messagebox.showinfo("Export Complete",
+                                f"PDF saved to:\n{result}")
+        elif result != "Cancelled.":
+            messagebox.showerror("Export Failed", result)

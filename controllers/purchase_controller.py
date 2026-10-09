@@ -47,10 +47,33 @@ class PurchaseController:
         return ok, result
 
     @staticmethod
-    def receive(user, purchase_id):
-        ok, msg = receive_purchase(purchase_id, user["user_id"])
+    def receive(user, purchase_id, product_ids=None):
+        """
+        Mark a purchase order as Received and add its items to inventory.
+
+        Parameters
+        ----------
+        user : dict
+        purchase_id : int
+        product_ids : list[int] | None
+            If provided, only these product_ids will be received.
+            If None, all items on the PO will be received (original behavior).
+        """
+        ok, msg = receive_purchase(
+            purchase_id,
+            user["user_id"],
+            product_ids=product_ids,
+        )
         if ok:
-            log_action(user["user_id"], "RECEIVE_PURCHASE", f"PO #{purchase_id}")
+            if product_ids:
+                log_action(
+                    user["user_id"],
+                    "RECEIVE_PURCHASE",
+                    f"PO #{purchase_id} | Received {len(product_ids)} item(s)",
+                )
+            else:
+                log_action(user["user_id"], "RECEIVE_PURCHASE",
+                           f"PO #{purchase_id}")
         return ok, msg
 
     @staticmethod
