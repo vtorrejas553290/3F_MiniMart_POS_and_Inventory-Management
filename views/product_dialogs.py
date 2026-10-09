@@ -635,6 +635,32 @@ class BatchesDialog(ctk.CTkToplevel):
             row = ctk.CTkFrame(self.list_frame, fg_color=bg, corner_radius=6)
             row.pack(fill="x", pady=2)
 
+            # ═════════════════════════════════════════
+            # ACTION BUTTONS FIRST (packed right, gets priority width)
+            # ═════════════════════════════════════════
+            actions = ctk.CTkFrame(row, fg_color="transparent",
+                                   width=170, height=26)
+            actions.pack(side="right", padx=(4, 6))
+            actions.pack_propagate(False)
+
+            ctk.CTkButton(actions, text="Discard", width=76, height=26,
+                          corner_radius=6,
+                          font=font_bold(11),
+                          fg_color=DANGER, hover_color=DANGER_HOVER,
+                          command=lambda bid=b["batch_id"], bn=b["batch_no"]:
+                              self._discard(bid, bn)
+                          ).pack(side="left", padx=(0, 4))
+
+            ctk.CTkButton(actions, text="Edit", width=60, height=26,
+                          corner_radius=6,
+                          font=font_bold(11),
+                          fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                          command=lambda bt=b: self._edit(bt)
+                          ).pack(side="left")
+
+            # ═════════════════════════════════════════
+            # DATA COLUMNS (packed left, fills remaining space)
+            # ═════════════════════════════════════════
             ctk.CTkLabel(row, text=b["batch_no"] or "-",
                          width=170, anchor="w",
                          font=font_bold(11),
@@ -675,23 +701,6 @@ class BatchesDialog(ctk.CTkToplevel):
                          width=130, anchor="w",
                          font=font(10),
                          text_color=FG_SECONDARY).pack(side="left", padx=4)
-
-            # ---- Edit + Discard buttons ----
-            ctk.CTkButton(row, text="Edit", width=60, height=26,
-                          corner_radius=6,
-                          font=font_bold(11),
-                          fg_color=ACCENT, hover_color=ACCENT_HOVER,
-                          command=lambda bt=b: self._edit(bt)
-                          ).pack(side="right", padx=(0, 4))
-
-            if b["quantity"] > 0:
-                ctk.CTkButton(row, text="Discard", width=70, height=26,
-                              corner_radius=6,
-                              font=font_bold(11),
-                              fg_color=DANGER, hover_color=DANGER_HOVER,
-                              command=lambda bid=b["batch_id"], bn=b["batch_no"]:
-                                  self._discard(bid, bn)
-                              ).pack(side="right", padx=(0, 4))
 
     def _discard(self, batch_id, batch_no):
         if not messagebox.askyesno(

@@ -336,12 +336,18 @@ class ReportsTab(ctk.CTkFrame):
                 payment_method=self.payment_filter,
                 limit=5,
             )
+            from controllers.transaction_controller import TransactionController
+            transactions = TransactionController.list(
+                date_from=self.date_from or None,
+                date_to=self.date_to or None,
+                search=self.search_query or None,
+                payment_method=self.payment_filter,
+            )
         except Exception as e:
             messagebox.showerror("Export Failed", f"Could not fetch data:\n{e}")
             return
 
         summary_dict = dict(summary) if summary else {}
-
         exporter = (self.user.get("full_name")
                     or self.user.get("username")
                     or "-")
@@ -349,6 +355,7 @@ class ReportsTab(ctk.CTkFrame):
         ok, result = export_sales_report(
             summary=summary_dict,
             top_products=products,
+            transactions=transactions,
             date_from=self.date_from or None,
             date_to=self.date_to or None,
             payment_filter=self.payment_filter,

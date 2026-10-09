@@ -28,31 +28,30 @@ class TransactionController:
     @staticmethod
     def list(date_from=None, date_to=None, search=None,
              payment_method=None):
-        return get_transactions_filtered(
+        rows = get_transactions_filtered(
             date_from=date_from,
             date_to=date_to,
             search=search,
             payment_method=payment_method,
         )
+        # Convert sqlite3.Row → dict so callers can use .get()
+        return [dict(r) for r in rows]
 
     @staticmethod
     def items(transaction_id):
-        return get_transaction_items(transaction_id)
+        rows = get_transaction_items(transaction_id)
+        return [dict(r) for r in rows]
 
     @staticmethod
     def summary(date_from=None, date_to=None):
         return get_sales_summary(date_from=date_from, date_to=date_to)
 
     # ─────────────────────────────────────────────
-    # PROFIT (computed from transaction_items snapshots)
+    # PROFIT
     # ─────────────────────────────────────────────
 
     @staticmethod
     def profit(transaction_id):
-        """
-        Return the profit for a transaction:
-        SUM((price - cost_price) * quantity) across its items.
-        """
         items = get_transaction_items(transaction_id)
         profit = 0.0
         for it in items:

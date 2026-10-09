@@ -14,42 +14,15 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
 )
 from reportlab.lib.enums import TA_LEFT
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 
 
 # ─────────────────────────────────────────────
-# FONT REGISTRATION (for ₱)
+# FONTS (Helvetica — no ₱, use PHP)
 # ─────────────────────────────────────────────
 
 FONT_REGULAR = "Helvetica"
 FONT_BOLD    = "Helvetica-Bold"
 FONT_ITALIC  = "Helvetica-Oblique"
-
-def _register_fonts():
-    global FONT_REGULAR, FONT_BOLD, FONT_ITALIC
-    try:
-        import reportlab
-        fonts_dir = os.path.join(os.path.dirname(reportlab.__file__), "fonts")
-
-        regular = os.path.join(fonts_dir, "DejaVuSans.ttf")
-        bold    = os.path.join(fonts_dir, "DejaVuSans-Bold.ttf")
-        italic  = os.path.join(fonts_dir, "DejaVuSans-Oblique.ttf")
-
-        if os.path.exists(regular):
-            pdfmetrics.registerFont(TTFont("DejaVu", regular))
-            FONT_REGULAR = "DejaVu"
-        if os.path.exists(bold):
-            pdfmetrics.registerFont(TTFont("DejaVu-Bold", bold))
-            FONT_BOLD = "DejaVu-Bold"
-        if os.path.exists(italic):
-            pdfmetrics.registerFont(TTFont("DejaVu-Italic", italic))
-            FONT_ITALIC = "DejaVu-Italic"
-    except Exception:
-        pass
-
-
-_register_fonts()
 
 
 # ─────────────────────────────────────────────
@@ -70,7 +43,7 @@ PROFIT_NEG  = colors.HexColor("#DC2626")
 # MAIN ENTRY
 # ─────────────────────────────────────────────
 
-def export_sales_report(summary, top_products,
+def export_sales_report(summary, top_products, transactions,
                         date_from=None, date_to=None,
                         payment_filter="All",
                         exporter_name="",
@@ -87,7 +60,7 @@ def export_sales_report(summary, top_products,
         return False, "Cancelled."
 
     try:
-        _build_pdf(path, summary, top_products,
+        _build_pdf(path, summary, top_products, transactions,
                    date_from, date_to, payment_filter,
                    exporter_name)
         return True, path
@@ -112,16 +85,16 @@ def _default_filename(date_from, date_to):
 # PDF BUILDER
 # ─────────────────────────────────────────────
 
-def _build_pdf(path, summary, top_products,
+def _build_pdf(path, summary, top_products, transactions,
                date_from, date_to, payment_filter,
                exporter_name=""):
     doc = SimpleDocTemplate(
         path,
         pagesize=letter,
-        leftMargin=0.7 * inch,
-        rightMargin=0.7 * inch,
-        topMargin=0.6 * inch,
-        bottomMargin=0.6 * inch,
+        leftMargin=0.55 * inch,
+        rightMargin=0.55 * inch,
+        topMargin=0.55 * inch,
+        bottomMargin=0.55 * inch,
         title="3F MiniMart — Sales Report",
         author="3F MiniMart POS",
     )
@@ -145,7 +118,7 @@ def _build_pdf(path, summary, top_products,
         f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     )
     story.append(Paragraph("  •  ".join(subtitle_parts), styles["3f_subtitle"]))
-    story.append(Spacer(1, 22))
+    story.append(Spacer(1, 20))
 
     # ═════════════════════════════════════════
     # SUMMARY
@@ -160,8 +133,8 @@ def _build_pdf(path, summary, top_products,
     gcash_total = summary.get("gcash_total", 0) or 0
 
     summary_data = [
-        ["Total Sales", f"₱{total_sales:,.2f}", "Transactions", f"{count:,}"],
-        ["Cash",        f"₱{cash_total:,.2f}",  "GCash",        f"₱{gcash_total:,.2f}"],
+        ["Total Sales", f"PHP {total_sales:,.2f}", "Transactions", f"{count:,}"],
+        ["Cash",        f"PHP {cash_total:,.2f}",  "GCash",        f"PHP {gcash_total:,.2f}"],
     ]
     summary_table = Table(summary_data,
                           colWidths=[1.3 * inch, 1.6 * inch,
@@ -185,7 +158,7 @@ def _build_pdf(path, summary, top_products,
         ("BOTTOMPADDING",(0, 0), (-1, -1), 10),
     ]))
     story.append(summary_table)
-    story.append(Spacer(1, 26))
+    story.append(Spacer(1, 22))
 
     # ═════════════════════════════════════════
     # TOP SELLING PRODUCTS
@@ -205,6 +178,7 @@ def _build_pdf(path, summary, top_products,
         rows = [header]
 
         for i, p in enumerate(top_products, start=1):
+            p = dict(p)
             display = " ".join(
                 part for part in (p.get("brand"),
                                   p.get("product_name"),
@@ -216,21 +190,21 @@ def _build_pdf(path, summary, top_products,
                 _truncate(display, 40),
                 p.get("product_code") or "-",
                 f"{p.get('units_sold', 0):,}",
-                f"₱{p.get('avg_cost', 0):.2f}",
-                f"₱{p.get('avg_price', 0):.2f}",
-                f"₱{p.get('profit', 0):.2f}",
-                f"₱{p.get('revenue', 0):,.2f}",
+                f"PHP {p.get('avg_cost', 0):.2f}",
+                f"PHP {p.get('avg_price', 0):.2f}",
+                f"PHP {p.get('profit', 0):.2f}",
+                f"PHP {p.get('revenue', 0):,.2f}",
             ])
 
         col_widths = [
             0.30 * inch,  # #
-            2.30 * inch,  # Product
+            2.20 * inch,  # Product
             0.80 * inch,  # Code
             0.55 * inch,  # Units
-            0.70 * inch,  # Cost
-            0.70 * inch,  # Price
+            0.75 * inch,  # Cost
+            0.75 * inch,  # Price
             0.80 * inch,  # Profit
-            0.95 * inch,  # Revenue
+            0.90 * inch,  # Revenue
         ]
 
         table = Table(rows, colWidths=col_widths, repeatRows=1)
@@ -266,6 +240,97 @@ def _build_pdf(path, summary, top_products,
 
         table.setStyle(TableStyle(style_cmds))
         story.append(table)
+
+    # ═════════════════════════════════════════
+    # TRANSACTIONS
+    # ═════════════════════════════════════════
+
+    story.append(Spacer(1, 26))
+    story.append(Paragraph(
+        f"Transactions ({len(transactions)})",
+        styles["3f_section"],
+    ))
+    story.append(Spacer(1, 8))
+
+    if not transactions:
+        story.append(Paragraph(
+            "No transactions in the selected period.",
+            styles["3f_empty"],
+        ))
+    else:
+        # Lazy import to avoid circular dependency at module load
+        from controllers.transaction_controller import TransactionController
+
+        header = ["Txn #", "Date & Time", "Cashier",
+                  "Payment", "Items Purchased", "Total"]
+        rows = [header]
+
+        for t in transactions:
+            t = dict(t)
+            tid = t.get("transaction_id")
+            cashier = t.get("full_name") or t.get("username") or "-"
+
+            # ---- Build items list ----
+            try:
+                line_items = TransactionController.items(tid)
+            except Exception:
+                line_items = []
+
+            if line_items:
+                parts = [
+                    f"{it['product_name']} ×{it['quantity']}"
+                    for it in line_items
+                ]
+                items_text = ", ".join(parts)
+            else:
+                items_text = "—"
+
+            items_text = _truncate(items_text, 90)
+
+            rows.append([
+                f"#{tid}",
+                (t.get("created_at") or "")[:16],
+                _truncate(cashier, 20),
+                t.get("payment_method") or "-",
+                items_text,
+                f"PHP {(t.get('total') or 0):,.2f}",
+            ])
+
+        col_widths = [
+            0.50 * inch,   # Txn #
+            1.05 * inch,   # Date & Time
+            1.15 * inch,   # Cashier
+            0.65 * inch,   # Payment
+            3.00 * inch,   # Items Purchased
+            0.95 * inch,   # Total
+        ]
+
+        txn_table = Table(rows, colWidths=col_widths, repeatRows=1)
+        txn_style = [
+            ("BACKGROUND",   (0, 0), (-1, 0), BRAND_BLUE),
+            ("TEXTCOLOR",    (0, 0), (-1, 0), colors.white),
+            ("FONT",         (0, 0), (-1, 0), FONT_BOLD, 9),
+            ("ALIGN",        (0, 0), (0, -1), "LEFT"),
+            ("ALIGN",        (4, 0), (4, -1), "LEFT"),
+            ("ALIGN",        (5, 0), (5, -1), "RIGHT"),
+            ("FONT",         (0, 1), (-1, -1), FONT_REGULAR, 9),
+            ("FONT",         (5, 1), (5, -1), FONT_BOLD, 9),
+            ("TEXTCOLOR",    (0, 1), (-1, -1), FG_PRIMARY),
+            ("TEXTCOLOR",    (5, 1), (5, -1), BRAND_BLUE),
+            ("LINEBELOW",    (0, 0), (-1, 0), 0.5, BRAND_BLUE),
+            ("LINEBELOW",    (0, 1), (-1, -1), 0.25, BORDER_GREY),
+            ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING",   (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+        ]
+        for i in range(1, len(rows)):
+            if i % 2 == 0:
+                txn_style.append(("BACKGROUND", (0, i), (-1, i), ROW_ALT))
+
+        txn_table.setStyle(TableStyle(txn_style))
+        story.append(txn_table)
 
     # ═════════════════════════════════════════
     # FOOTER

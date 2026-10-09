@@ -2,43 +2,49 @@
 # DASHBOARD CONTROLLER
 # ─────────────────────────────────────────────
 
-from models.transaction_model import (
-    get_dashboard_stats, get_profit_breakdown_today,
+from models.transaction_model import get_dashboard_stats
+from models.product_model import get_all_products
+from models.batch_model import (
+    count_expiring_soon, count_expired,
+    get_expiring_soon_batches, get_expired_batches,
 )
-from models.product_model import get_product_counts, get_low_stock_products
-from models.batch_model import count_expiring_soon, count_expired
 
 
 class DashboardController:
 
-    # ─────────────────────────────────────────────
-    # STATS
-    # ─────────────────────────────────────────────
-
     @staticmethod
     def get_stats():
-        """Combine sales + product + batch stats into one dict."""
+        """
+        Compute dashboard stats with ONE product fetch shared across
+        all product-derived numbers.
+        """
         stats = get_dashboard_stats()
-        counts = get_product_counts()
-        stats.update(counts)
 
+        # ---- Fetch products ONCE ----
+        products = get_all_products(include_archived=False)
+
+        total_products = len(products)
+        low_count = sum(
+            1 for p in products
+            if 0 < p["stock_qty"] <= (p["low_stock_level"] or 0)
+        )
+        out_count = sum(1 for p in products if p["stock_qty"] <= 0)
+
+        stats["total_products"]     = total_products
+        stats["low_stock_count"]    = low_count
+        stats["out_of_stock_count"] = out_count
+
+        # ---- Batch aggregates ----
         stats["expiring_soon_count"] = count_expiring_soon(days=30)
-        stats["expired_count"] = count_expired()
+        stats["expired_count"]       = count_expired()
 
         return stats
 
-    # ─────────────────────────────────────────────
-    # PROFIT TODAY
-    # ─────────────────────────────────────────────
-
-    @staticmethod
-    def get_profit_today():
-        return get_profit_breakdown_today()
-
-    # ─────────────────────────────────────────────
-    # LOW STOCK
-    # ─────────────────────────────────────────────
-
     @staticmethod
     def low_stock_products(limit=500):
-        return get_low_stock_products()[:limit]
+        products = get_all_products(include_archived=False)
+        rows = [
+            p for p in products
+            if p["stock_qty"] <= (p["low_stock_level"] or 0)
+        ]
+        return rows[:limit]

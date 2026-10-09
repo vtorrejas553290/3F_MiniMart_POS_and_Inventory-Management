@@ -1,10 +1,12 @@
 # ─────────────────────────────────────────────
-# DASHBOARD VIEW (KPIs + Profit Today + Low Stock)
+# DASHBOARD VIEW (KPIs + Expiring Soon + Low Stock)
 # ─────────────────────────────────────────────
 
+from datetime import datetime
 import customtkinter as ctk
 
 from controllers.dashboard_controller import DashboardController
+from controllers.inventory_controller import InventoryController
 from controllers.auth_controller import AuthController
 from config import (
     font, font_bold,
@@ -15,10 +17,6 @@ from config import (
     NEUTRAL, NEUTRAL_HOVER, NEUTRAL_TEXT,
 )
 
-
-# ─────────────────────────────────────────────
-# DASHBOARD VIEW
-# ─────────────────────────────────────────────
 
 class DashboardView(ctk.CTkFrame):
 
@@ -31,6 +29,9 @@ class DashboardView(ctk.CTkFrame):
 
         self.lowstock_page = 1
         self.lowstock_total_pages = 1
+
+        self.expiring_page = 1
+        self.expiring_total_pages = 1
 
         self._build()
         self._load()
@@ -62,7 +63,7 @@ class DashboardView(ctk.CTkFrame):
                      anchor="w").pack(fill="x", pady=(2, 0))
 
         # ═════════════════════════════════════════
-        # KPI ROW (4 clickable cards)
+        # KPI ROW
         # ═════════════════════════════════════════
 
         kpi_row = ctk.CTkFrame(self, fg_color="transparent")
@@ -92,66 +93,35 @@ class DashboardView(ctk.CTkFrame):
         body = ctk.CTkFrame(self, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=20, pady=(0, 20))
 
-        # ---- LEFT: Profit Today ----
-        profit_panel = ctk.CTkFrame(body, fg_color=BG_CARD,
-                                    corner_radius=12,
-                                    border_width=1,
-                                    border_color=BORDER)
-        profit_panel.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        # ---- LEFT: Expiring in 30 Days ----
+        expiring_panel = ctk.CTkFrame(body, fg_color=BG_CARD,
+                                      corner_radius=12,
+                                      border_width=1,
+                                      border_color=BORDER)
+        expiring_panel.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-        profit_header = ctk.CTkFrame(profit_panel, fg_color="transparent")
-        profit_header.pack(fill="x", padx=16, pady=(14, 8))
+        exp_header = ctk.CTkFrame(expiring_panel, fg_color="transparent")
+        exp_header.pack(fill="x", padx=16, pady=(14, 8))
 
-        ctk.CTkLabel(profit_header, text="Profit Today",
+        ctk.CTkLabel(exp_header, text="Expiring in 30 Days",
                      font=font_bold(14),
                      text_color=FG_PRIMARY,
                      anchor="w").pack(side="left")
 
-        # ---- Big profit number ----
-        profit_body = ctk.CTkFrame(profit_panel, fg_color="transparent")
-        profit_body.pack(fill="x", padx=20, pady=(6, 10))
+        ctk.CTkButton(exp_header, text="View All",
+                      width=90, height=30,
+                      corner_radius=8,
+                      font=font_bold(11),
+                      fg_color=NEUTRAL, hover_color=NEUTRAL_HOVER,
+                      text_color=NEUTRAL_TEXT,
+                      command=self._go_to_inventory
+                      ).pack(side="right")
 
-        ctk.CTkLabel(profit_body, text="TOTAL PROFIT",
-                     font=font_bold(10),
-                     text_color=FG_SECONDARY,
-                     anchor="w").pack(fill="x")
+        self.expiring_frame = ctk.CTkScrollableFrame(expiring_panel,
+                                                     fg_color="transparent")
+        self.expiring_frame.pack(fill="both", expand=True, padx=8, pady=(0, 6))
 
-        self.profit_total_label = ctk.CTkLabel(
-            profit_body, text="₱0.00",
-            font=font_bold(34),
-            text_color=SUCCESS,
-            anchor="w",
-        )
-        self.profit_total_label.pack(fill="x", pady=(2, 0))
-
-        self.profit_sub_label = ctk.CTkLabel(
-            profit_body, text="from 0 transactions",
-            font=font(11),
-            text_color=FG_MUTED,
-            anchor="w",
-        )
-        self.profit_sub_label.pack(fill="x", pady=(2, 0))
-
-        # ---- Divider ----
-        ctk.CTkFrame(profit_panel, height=1, fg_color=BORDER).pack(
-            fill="x", padx=16, pady=(6, 4))
-
-        # ---- Breakdown rows ----
-        breakdown = ctk.CTkFrame(profit_panel, fg_color="transparent")
-        breakdown.pack(fill="x", padx=16, pady=(6, 16))
-
-        self.cash_profit_label = self._make_breakdown_row(
-            breakdown, "Cash profit", "₱0.00", SUCCESS,
-        )
-        self.gcash_profit_label = self._make_breakdown_row(
-            breakdown, "GCash profit", "₱0.00", ACCENT,
-        )
-        self.revenue_label = self._make_breakdown_row(
-            breakdown, "Revenue", "₱0.00", FG_PRIMARY,
-        )
-        self.cost_label = self._make_breakdown_row(
-            breakdown, "Cost of goods", "₱0.00", FG_SECONDARY,
-        )
+        self.expiring_pager = self._make_pager(expiring_panel, "expiring")
 
         # ---- RIGHT: Low Stock Alerts ----
         right = ctk.CTkFrame(body, fg_color=BG_CARD,
@@ -183,7 +153,7 @@ class DashboardView(ctk.CTkFrame):
         self.lowstock_pager = self._make_pager(right, "lowstock")
 
     # ─────────────────────────────────────────────
-    # KPI CARD BUILDER
+    # KPI CARD
     # ─────────────────────────────────────────────
 
     def _make_kpi_card(self, parent, label, value, value_color, command):
@@ -220,27 +190,6 @@ class DashboardView(ctk.CTkFrame):
                 w.configure(cursor="hand2")
             except Exception:
                 pass
-
-        return value_label
-
-    # ─────────────────────────────────────────────
-    # BREAKDOWN ROW HELPER
-    # ─────────────────────────────────────────────
-
-    def _make_breakdown_row(self, parent, label, value, value_color):
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=4)
-
-        ctk.CTkLabel(row, text=label,
-                     font=font(11),
-                     text_color=FG_SECONDARY,
-                     anchor="w").pack(side="left")
-
-        value_label = ctk.CTkLabel(row, text=value,
-                                   font=font_bold(12),
-                                   text_color=value_color,
-                                   anchor="e")
-        value_label.pack(side="right")
 
         return value_label
 
@@ -287,6 +236,11 @@ class DashboardView(ctk.CTkFrame):
             if 1 <= new_page <= self.lowstock_total_pages:
                 self.lowstock_page = new_page
                 self._render_low_stock()
+        elif pager_key == "expiring":
+            new_page = self.expiring_page + delta
+            if 1 <= new_page <= self.expiring_total_pages:
+                self.expiring_page = new_page
+                self._render_expiring()
 
     # ─────────────────────────────────────────────
     # NAVIGATION
@@ -328,24 +282,130 @@ class DashboardView(ctk.CTkFrame):
                         "#D97706" if expiring > 0 else FG_PRIMARY),
         )
 
-        # ---- Profit panel ----
-        p = DashboardController.get_profit_today()
-        profit = p["profit"]
-
-        profit_color = SUCCESS if profit >= 0 else DANGER
-        self.profit_total_label.configure(
-            text=f"₱{profit:,.2f}",
-            text_color=profit_color,
-        )
-        self.profit_sub_label.configure(
-            text=f"from {p['txn_count']:,} transaction(s)"
-        )
-        self.cash_profit_label.configure(text=f"₱{p['cash_profit']:,.2f}")
-        self.gcash_profit_label.configure(text=f"₱{p['gcash_profit']:,.2f}")
-        self.revenue_label.configure(text=f"₱{p['revenue']:,.2f}")
-        self.cost_label.configure(text=f"₱{p['cost']:,.2f}")
-
+        self._render_expiring()
         self._render_low_stock()
+
+    # ─────────────────────────────────────────────
+    # EXPIRING SOON (batches, next 30 days + already expired)
+    # ─────────────────────────────────────────────
+
+    def _render_expiring(self):
+        for w in self.expiring_frame.winfo_children():
+            w.destroy()
+
+        # ---- Fetch batches expiring in next 30 days ----
+        try:
+            rows = InventoryController.list_expiring_soon(days=30)
+        except Exception as e:
+            ctk.CTkLabel(self.expiring_frame,
+                         text=f"Error: {e}",
+                         font=font(11),
+                         text_color=DANGER).pack(pady=20)
+            self._update_pager(self.expiring_pager, 1, 1)
+            return
+
+        # ---- Fetch already-expired batches ----
+        try:
+            expired = InventoryController.list_expired_batches()
+        except Exception:
+            expired = []
+
+        # ---- Combine: expired first, then expiring soon ----
+        all_rows = list(expired) + [r for r in rows if r not in expired]
+
+        total = len(all_rows)
+        self.expiring_total_pages = max(
+            1, (total + self.PAGE_SIZE - 1) // self.PAGE_SIZE
+        )
+        if self.expiring_page > self.expiring_total_pages:
+            self.expiring_page = self.expiring_total_pages
+
+        start = (self.expiring_page - 1) * self.PAGE_SIZE
+        end = start + self.PAGE_SIZE
+        page_rows = all_rows[start:end]
+
+        if not page_rows:
+            ctk.CTkLabel(self.expiring_frame,
+                         text="No products expiring in the next 30 days.",
+                         font=font(11),
+                         text_color=FG_MUTED).pack(pady=30)
+            self._update_pager(self.expiring_pager, 1, 1)
+            return
+
+        # ---- Header ----
+        header = ctk.CTkFrame(self.expiring_frame, fg_color="transparent")
+        header.pack(fill="x", pady=(4, 8))
+
+        for text, width in [
+            ("Product",    180),
+            ("Batch No",   130),
+            ("Qty",         50),
+            ("Expires",    130),
+        ]:
+            ctk.CTkLabel(header, text=text, width=width,
+                         anchor="w",
+                         font=font_bold(11),
+                         text_color=FG_SECONDARY).pack(side="left", padx=3)
+
+        # ---- Rows ----
+        today = datetime.now().date()
+
+        for i, b in enumerate(page_rows):
+            bg = BG_ROW_ALT if i % 2 else BG_CARD
+            row = ctk.CTkFrame(self.expiring_frame, fg_color=bg, corner_radius=6)
+            row.pack(fill="x", pady=2)
+
+            # ---- Product name (Brand + Name + Size) ----
+            display = " ".join(
+                part for part in (b.get("brand"), b.get("product_name"),
+                                  b.get("size"))
+                if part
+            )
+            ctk.CTkLabel(row, text=display,
+                         width=180, anchor="w",
+                         font=font_bold(11),
+                         text_color=FG_PRIMARY).pack(side="left", padx=3, pady=6)
+
+            ctk.CTkLabel(row, text=b.get("batch_no") or "-",
+                         width=130, anchor="w",
+                         font=font(11),
+                         text_color=FG_SECONDARY).pack(side="left", padx=3)
+
+            ctk.CTkLabel(row, text=str(b.get("quantity") or 0),
+                         width=50, anchor="w",
+                         font=font_bold(11),
+                         text_color=FG_PRIMARY).pack(side="left", padx=3)
+
+            # ---- Expires + days-left ----
+            exp_str = b.get("expiration_date") or "—"
+            days_left = None
+            try:
+                exp_date = datetime.strptime(exp_str, "%Y-%m-%d").date()
+                days_left = (exp_date - today).days
+            except ValueError:
+                pass
+
+            if days_left is None:
+                exp_text, exp_color = exp_str, FG_MUTED
+            elif days_left < 0:
+                exp_text = f"{exp_str} (expired)"
+                exp_color = DANGER
+            elif days_left <= 7:
+                exp_text = f"{exp_str} ({days_left}d)"
+                exp_color = DANGER
+            elif days_left <= 30:
+                exp_text = f"{exp_str} ({days_left}d)"
+                exp_color = "#D97706"
+            else:
+                exp_text, exp_color = exp_str, FG_SECONDARY
+
+            ctk.CTkLabel(row, text=exp_text,
+                         width=130, anchor="w",
+                         font=font_bold(11),
+                         text_color=exp_color).pack(side="left", padx=3)
+
+        self._update_pager(self.expiring_pager,
+                           self.expiring_page, self.expiring_total_pages)
 
     # ─────────────────────────────────────────────
     # LOW STOCK
@@ -381,9 +441,9 @@ class DashboardView(ctk.CTkFrame):
 
         for text, width in [
             ("Product",    180),
-            ("Category",   90),
-            ("Stock",      55),
-            ("Min",        45),
+            ("Category",    90),
+            ("Stock",       55),
+            ("Min",         45),
         ]:
             ctk.CTkLabel(header, text=text, width=width,
                          anchor="w",
